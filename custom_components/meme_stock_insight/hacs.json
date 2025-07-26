@@ -1,0 +1,16 @@
+{
+  "name": "Meme Stock Insight",
+  "content_in_root": false,
+  "render_readme": true,
+  "domains": [
+    "sensor"
+  ],
+  "country": [
+    "GB",
+    "US",
+    "CA",
+    "AU"
+  ],
+  "homeassistant": "2025.7.0",
+  "hacs": "2.0.5"
+}
