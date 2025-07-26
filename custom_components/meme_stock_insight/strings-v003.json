@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Setup Meme Stock Insight",
-        "description": "Configure your Meme Stock Insight integration. You'll need Reddit API credentials to get started. Visit {reddit_setup_url} to create an app and get your credentials.",
+        "description": "Configure your Meme Stock Insight integration. You'll need Reddit API credentials to get started. Visit {reddit_setup_url} to create a **script-type** app and get your credentials.",
         "data": {
           "reddit_client_id": "Reddit Client ID",
           "reddit_client_secret": "Reddit Client Secret",
@@ -19,9 +19,12 @@
       }
     },
     "error": {
-      "reddit_auth_failed": "Failed to authenticate with Reddit. Please check your credentials.",
+      "reddit_auth_failed": "Failed to authenticate with Reddit. Ensure your app is created as 'script' type, credentials are correct, and the username owns the Reddit app.",
+      "reddit_wrong_app": "Reddit app must be created as a 'script' application. Please check your app settings.",
+      "reddit_invalid_user_agent": "User agent rejected by Reddit. Please ensure proper format is used.",
       "invalid_subreddit": "One or more subreddit names are invalid.",
-      "api_error": "Error connecting to external APIs."
+      "api_error": "Error connecting to external APIs. Please check your internet connection.",
+      "unknown": "An unexpected error occurred. Please try again."
     },
     "abort": {
       "already_configured": "This integration is already configured."

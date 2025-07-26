@@ -4,9 +4,10 @@
   "render_readme": true,
   "domains": ["sensor"],
   "country": ["GB", "US", "CA", "AU"],
-  "homeassistant": "2025.7.0",
-  "hacs": "2.0.5",
+  "homeassistant": "2023.7.0",
+  "hacs": "1.32.0",
   "documentation": "https://github.com/BestMasterChief/meme_stock_insight",
   "issue_tracker": "https://github.com/BestMasterChief/meme_stock_insight/issues",
-  "codeowners": ["@BestMasterChief"]
+  "codeowners": ["@BestMasterChief"],
+  "version": "0.0.3"
 }

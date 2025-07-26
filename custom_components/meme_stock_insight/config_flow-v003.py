@@ -1,4 +1,5 @@
 """Config flow for Meme Stock Insight integration."""
+
 from __future__ import annotations
 
 import logging
@@ -19,7 +20,7 @@ _LOGGER = logging.getLogger(__name__)
 STEP_USER_DATA_SCHEMA = vol.Schema({
     vol.Required("reddit_client_id"): str,
     vol.Required("reddit_client_secret"): str,
-    vol.Required("reddit_username"): str,  
+    vol.Required("reddit_username"): str,
     vol.Required("reddit_password"): str,
     vol.Optional("polygon_api_key", default=""): str,
     vol.Optional("trading212_api_key", default=""): str,
@@ -28,7 +29,6 @@ STEP_USER_DATA_SCHEMA = vol.Schema({
     vol.Optional("min_posts", default=5): vol.All(vol.Coerce(int), vol.Range(min=1, max=50)),
     vol.Optional("min_karma", default=100): vol.All(vol.Coerce(int), vol.Range(min=0, max=10000)),
 })
-
 
 class MemeStockInsightConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Meme Stock Insight."""
@@ -47,12 +47,18 @@ class MemeStockInsightConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 await self._validate_reddit_credentials(
                     user_input["reddit_client_id"],
                     user_input["reddit_client_secret"],
-                    user_input["reddit_username"],
+                    user_input["reddit_username"], 
                     user_input["reddit_password"]
                 )
-            except Exception as e:
-                _LOGGER.exception("Error validating Reddit credentials")
+            except ValueError as err:
+                _LOGGER.warning(str(err))
                 errors["base"] = "reddit_auth_failed"
+            except ConnectionError as err:
+                _LOGGER.warning(f"Reddit API connection error: {err}")
+                errors["base"] = "api_error"
+            except Exception as err:
+                _LOGGER.exception("Unexpected error validating Reddit credentials")
+                errors["base"] = "unknown"
 
             # Convert subreddits string to list
             if "subreddits" in user_input:
@@ -73,40 +79,48 @@ class MemeStockInsightConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
             description_placeholders={
                 "reddit_setup_url": "https://www.reddit.com/prefs/apps",
-                "polygon_setup_url": "https://polygon.io/dashboard",
+                "polygon_setup_url": "https://polygon.io/dashboard", 
                 "trading212_setup_url": "https://www.trading212.com/en/login"
             }
         )
 
     async def _validate_reddit_credentials(
-        self, client_id: str, client_secret: str, username: str, password: str
-    ) -> bool:
-        """Validate Reddit API credentials."""
+        self, client_id: str, client_secret: str,
+        username: str, password: str
+    ) -> None:
+        """Raise on invalid credentials; return on success."""
         import praw
-
+        import prawcore
+        
         try:
             reddit = praw.Reddit(
-                client_id=client_id,
-                client_secret=client_secret,
-                user_agent="HomeAssistant:MemeStockInsight:v1.0 (validation)",
-                username=username,
-                password=password
+                client_id=client_id.strip(),
+                client_secret=client_secret.strip() or None,
+                user_agent=(
+                    "homeassistant:meme_stock_insight:v0.0.3 "
+                    f"(by /u/{username})"
+                ),
+                username=username.strip(),
+                password=password,
+                ratelimit_seconds=5,   # polite retry window
             )
-
-            # Test the connection by trying to access user info
-            reddit.user.me()
-            return True
-
-        except Exception as e:
-            _LOGGER.error(f"Reddit credential validation failed: {e}")
-            raise
+            me = reddit.user.me()       # triggers the login
+            if me is None:
+                raise ValueError("Credentials accepted but read-only; "
+                               "app is not a script-type or wrong user.")
+        except prawcore.exceptions.OAuthException as err:
+            raise ValueError("OAuth refused: check app type (must be script), "
+                           "client_id/secret, and user-agent.") from err
+        except prawcore.exceptions.ResponseException as err:
+            raise ConnectionError(f"Reddit API refused connection: {err}") from err
+        except Exception:
+            raise   # bubble the rest
 
     @staticmethod
     @config_entries.HANDLERS.register(DOMAIN)
     def async_get_options_flow(config_entry):
         """Get the options flow for this handler."""
         return MemeStockInsightOptionsFlow(config_entry)
-
 
 class MemeStockInsightOptionsFlow(config_entries.OptionsFlow):
     """Handle options flow for Meme Stock Insight."""
@@ -131,7 +145,7 @@ class MemeStockInsightOptionsFlow(config_entries.OptionsFlow):
 
         # Get current options or defaults from config entry
         current_subreddits = self.config_entry.options.get(
-            "subreddits", 
+            "subreddits",
             self.config_entry.data.get("subreddits", DEFAULT_SUBREDDITS)
         )
 
@@ -140,11 +154,11 @@ class MemeStockInsightOptionsFlow(config_entries.OptionsFlow):
 
         options_schema = vol.Schema({
             vol.Optional(
-                "subreddits", 
+                "subreddits",
                 default=current_subreddits
             ): str,
             vol.Optional(
-                "update_interval", 
+                "update_interval",
                 default=self.config_entry.options.get("update_interval", 12)
             ): vol.All(vol.Coerce(int), vol.Range(min=1, max=24)),
             vol.Optional(
