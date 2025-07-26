@@ -1,0 +1,21 @@
+{
+  "domain": "meme_stock_insight",
+  "name": "Meme Stock Insight",
+  "codeowners": [
+    "@yourusername"
+  ],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/yourusername/hass-meme_stock_insight",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/yourusername/hass-meme_stock_insight/issues",
+  "requirements": [
+    "praw>=7.7.1",
+    "vaderSentiment>=3.3.2",
+    "aiohttp>=3.8.0",
+    "numpy>=1.21.0",
+    "scipy>=1.7.0"
+  ],
+  "version": "1.0.0"
+}
