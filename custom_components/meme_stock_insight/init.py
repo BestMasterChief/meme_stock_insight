@@ -1,17 +1,15 @@
 """The Meme Stock Insight integration."""
-
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import DOMAIN
-from .coordinator import MemeStockDataUpdateCoordinator
+from .coordinator import MemeStockInsightCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -21,22 +19,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Meme Stock Insight from a config entry."""
     hass.data.setdefault(DOMAIN, {})
 
-    # Create coordinator
-    coordinator = MemeStockDataUpdateCoordinator(
+    coordinator = MemeStockInsightCoordinator(
         hass,
-        _LOGGER,
-        name="Meme Stock Data",
-        update_interval=timedelta(hours=entry.data.get("update_interval", 12)),
-        session=async_get_clientsession(hass),
-        config=entry.data,
+        entry.data["client_id"],
+        entry.data["client_secret"],
+        entry.data["username"],
+        entry.data["password"],
+        entry.data.get("subreddits", "wallstreetbets,stocks,investing"),
+        entry.data.get("update_interval", 300),
     )
 
-    # Initial data fetch
-    await coordinator.async_config_entry_first_refresh()
+    try:
+        # First refresh is now very lightweight and should not fail
+        await coordinator.async_config_entry_first_refresh()
+    except Exception as exc:
+        _LOGGER.error("Error during first refresh (will continue anyway): %s", exc)
+        # Don't raise ConfigEntryNotReady - let it continue with empty data
+        # The coordinator will handle retries on subsequent updates
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
-    # Setup platforms
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
@@ -47,8 +49,3 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN].pop(entry.entry_id)
 
     return unload_ok
-
-async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload config entry."""
-    await async_unload_entry(hass, entry)
-    await async_setup_entry(hass, entry)

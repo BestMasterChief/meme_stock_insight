@@ -15,7 +15,6 @@ from .coordinator import MemeStockInsightCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
@@ -29,7 +28,6 @@ async def async_setup_entry(
         entities.append(MemeStockInsightSensor(coordinator, sensor_type, config_entry))
 
     async_add_entities(entities)
-
 
 class MemeStockInsightSensor(CoordinatorEntity, SensorEntity):
     """Representation of a Meme Stock Insight sensor."""
@@ -48,6 +46,7 @@ class MemeStockInsightSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = f"{config_entry.entry_id}_{sensor_type}"
         self._attr_icon = SENSOR_TYPES[sensor_type]["icon"]
         self._attr_native_unit_of_measurement = SENSOR_TYPES[sensor_type]["unit"]
+        self._attr_attribution = ATTRIBUTION
 
     @property
     def native_value(self) -> Any:
@@ -58,78 +57,41 @@ class MemeStockInsightSensor(CoordinatorEntity, SensorEntity):
         if self._sensor_type == "mentions":
             return self.coordinator.data.get("total_mentions", 0)
         elif self._sensor_type == "sentiment":
-            sentiment_data = self.coordinator.data.get("sentiment", {})
-            if sentiment_data:
-                # Return average sentiment across all tracked stocks
-                return round(sum(sentiment_data.values()) / len(sentiment_data), 2)
-            return 0.0
+            return self.coordinator.data.get("average_sentiment", 0.0)
         elif self._sensor_type == "trending":
-            trending_data = self.coordinator.data.get("trending", [])
-            return len(trending_data)
+            return self.coordinator.data.get("trending_count", 0)
 
         return None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the state attributes."""
+        """Return additional state attributes."""
         if not self.coordinator.data:
             return {}
 
         attributes = {
-            "attribution": ATTRIBUTION,
-            "version": VERSION,
-            "last_update": self.coordinator.data.get("last_update"),
-            "subreddits": ", ".join(self.coordinator.subreddits),
+            "last_updated": self.coordinator.data.get("last_updated"),
+            "status": self.coordinator.data.get("status", "unknown"),
+            "integration_version": VERSION,
         }
 
         if self._sensor_type == "mentions":
-            mentions = self.coordinator.data.get("mentions", {})
-            # Show top 10 most mentioned stocks
-            sorted_mentions = dict(sorted(mentions.items(), key=lambda x: x[1], reverse=True)[:10])
-            attributes["top_mentioned_stocks"] = sorted_mentions
-            attributes["total_unique_stocks"] = len(mentions)
-
+            attributes.update({
+                "stock_mentions": self.coordinator.data.get("stock_mentions", {}),
+                "posts_processed": self.coordinator.data.get("posts_processed", 0),
+            })
         elif self._sensor_type == "sentiment":
-            sentiment = self.coordinator.data.get("sentiment", {})
-            # Show sentiment for top stocks
-            sorted_sentiment = dict(sorted(sentiment.items(), key=lambda x: x[1], reverse=True)[:10])
-            attributes["stock_sentiment"] = {k: round(v, 2) for k, v in sorted_sentiment.items()}
-
-            # Calculate sentiment distribution
-            positive_count = sum(1 for v in sentiment.values() if v > 0.1)
-            negative_count = sum(1 for v in sentiment.values() if v < -0.1)
-            neutral_count = len(sentiment) - positive_count - negative_count
-
-            attributes["sentiment_distribution"] = {
-                "positive": positive_count,
-                "negative": negative_count,
-                "neutral": neutral_count
-            }
-
+            attributes.update({
+                "sentiment_distribution": self.coordinator.data.get("sentiment_distribution", {}),
+            })
         elif self._sensor_type == "trending":
-            trending = self.coordinator.data.get("trending", [])
-            attributes["trending_stocks"] = trending[:10]
-
-            # Calculate trending momentum
-            if trending:
-                top_stock = trending[0]
-                attributes["top_trending_stock"] = top_stock["symbol"]
-                attributes["top_trending_mentions"] = top_stock["mentions"]
+            attributes.update({
+                "trending_stocks": self.coordinator.data.get("trending_stocks", []),
+            })
 
         return attributes
 
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return self.coordinator.last_update_success
-
-    @property
-    def device_info(self) -> dict[str, Any]:
-        """Return device information about this entity."""
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": "Meme Stock Insight",
-            "manufacturer": "Custom Integration",
-            "model": "Reddit Stock Tracker",
-            "sw_version": VERSION,
-        }
+        return self.coordinator.last_update_success or self.coordinator.data is not None

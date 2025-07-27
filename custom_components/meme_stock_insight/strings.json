@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Meme Stock Insight Configuration",
-        "description": "Enter your Reddit API credentials and configuration options.",
+        "description": "Enter your Reddit API credentials and configuration options. Make sure your Reddit app is created as 'script' type.",
         "data": {
           "client_id": "Reddit Client ID",
           "client_secret": "Reddit Client Secret",
@@ -16,8 +16,7 @@
     },
     "error": {
       "reddit_auth_failed": "Failed to authenticate with Reddit. Ensure your app is created as 'script' type, credentials are correct, and the username owns the Reddit app.",
-      "reddit_wrong_app": "Reddit app must be created as a 'script' application. Please check your app settings.",
-      "api_error": "Error connecting to Reddit API. Please check your internet connection and try again.",
+      "timeout": "Reddit authentication timed out. Please check your internet connection and try again.",
       "unknown": "Unexpected error occurred during setup."
     },
     "abort": {

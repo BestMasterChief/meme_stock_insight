@@ -15,6 +15,9 @@ CONF_UPDATE_INTERVAL = "update_interval"
 DEFAULT_UPDATE_INTERVAL = 300  # 5 minutes
 DEFAULT_SUBREDDITS = "wallstreetbets,stocks,investing"
 
+# Attribution
+ATTRIBUTION = "Data provided by Reddit API"
+
 # Popular meme stock symbols to track
 MEME_STOCK_SYMBOLS = {
     "GME", "AMC", "BBBY", "NOK", "BB", "SNDL", "PLTR", "WISH", "CLOV", "SOFI",
@@ -44,48 +47,54 @@ FALSE_POSITIVE_KEYWORDS = {
     "IPO": ["initial public offering"],
     "NYSE": ["new york stock exchange"],
     "FDA": ["food and drug administration"],
-    "SEC": ["securities and exchange"],
+    "SEC": ["securities and exchange commission"],
     "FED": ["federal reserve"],
     "GDP": ["gross domestic product"],
     "CPI": ["consumer price index"],
-    "PPI": ["producer price index"]
+    "ETF": ["exchange traded fund"],
+    "IPO": ["initial public offering"],
+    "RSI": ["relative strength index"],
+    "MACD": ["moving average convergence divergence"]
 }
 
-# Sentiment analysis keywords
-SENTIMENT_KEYWORDS_POSITIVE = [
-    "moon", "rocket", "bullish", "bull", "buy", "long", "hold", "hodl", "diamond hands",
-    "to the moon", "squeeze", "gamma squeeze", "short squeeze", "tendies", "gains",
-    "profit", "green", "up", "rise", "surge", "breakout", "rally", "pump", "strong",
-    "good", "great", "excellent", "amazing", "love", "like", "positive", "optimistic",
-    "calls", "yolo", "all in", "loading", "accumulate", "dip buying", "buying opportunity"
-]
+# Positive sentiment keywords
+SENTIMENT_KEYWORDS_POSITIVE = {
+    "moon", "rocket", "bullish", "buy", "calls", "green", "gains", "profit",
+    "diamond hands", "hold", "hodl", "strong", "support", "breakout", "rally",
+    "squeeze", "pump", "bull", "uptrend", "momentum", "catalyst", "golden",
+    "explosion", "surge", "spike", "soar", "rise", "climb", "jump", "boost",
+    "positive", "optimistic", "confident", "excited", "potential", "opportunity",
+    "winner", "success", "victory", "target", "breakthrough", "promising"
+}
 
-SENTIMENT_KEYWORDS_NEGATIVE = [
-    "crash", "dump", "bearish", "bear", "sell", "short", "puts", "red", "down",
-    "fall", "drop", "decline", "dip", "loss", "losses", "baghold", "bagholder",
-    "dead", "rip", "rug pull", "scam", "overvalued", "bubble", "bad", "terrible",
-    "awful", "hate", "dislike", "negative", "pessimistic", "fear", "panic", "avoid",
-    "exit", "cut losses", "stop loss", "weakness", "support broken", "resistance"
-]
+# Negative sentiment keywords  
+SENTIMENT_KEYWORDS_NEGATIVE = {
+    "crash", "dump", "bearish", "sell", "puts", "red", "loss", "bear",
+    "downtrend", "decline", "drop", "fall", "plunge", "tank", "collapse",
+    "weak", "resistance", "bagholding", "rip", "dead", "over", "done",
+    "disaster", "terrible", "awful", "worried", "concerned", "doubt",
+    "negative", "pessimistic", "fear", "panic", "scary", "risky", "danger",
+    "warning", "caution", "avoid", "stay away", "trap", "scam", "fraud"
+}
 
-# Sensor types
+# Sensor types and their configuration
 SENSOR_TYPES = {
     "mentions": {
         "name": "Stock Mentions",
-        "icon": "mdi:trending-up",
+        "icon": "mdi:chart-line",
         "unit": "mentions",
+        "device_class": None,
     },
     "sentiment": {
-        "name": "Market Sentiment",
-        "icon": "mdi:emoticon-happy",
+        "name": "Market Sentiment", 
+        "icon": "mdi:emoticon-happy-outline",
         "unit": "score",
+        "device_class": None,
     },
     "trending": {
         "name": "Trending Stocks",
-        "icon": "mdi:fire",
+        "icon": "mdi:trending-up",
         "unit": "stocks",
+        "device_class": None,
     },
 }
-
-# Attribution
-ATTRIBUTION = "Data from Reddit via PRAW"
