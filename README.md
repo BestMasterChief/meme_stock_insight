@@ -2,9 +2,6 @@
 
 *Transform your Home Assistant into a meme stock command center. Because why check Reddit manually when your smart home can do it for you?*
 
-![Meme Stock Insight Demo](https://via.placeholder.com/750x400/222/eee?text=Meme+Stock+Insight+Dashboard+Demo)  
-*(Replace with your own screenshot!)*
-
 ---
 
 ## ⚠️ DISCLAIMER
