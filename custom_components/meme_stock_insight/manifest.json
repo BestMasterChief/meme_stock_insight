@@ -1,12 +1,12 @@
 {
   "domain": "meme_stock_insight",
   "name": "Meme Stock Insight",
-  "codeowners": ["@yourusername"],
+  "codeowners": ["@BestMasterChief"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/yourusername/meme_stock_insight",
+  "documentation": "https://github.com/BestMasterChief/meme_stock_insight",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/yourusername/meme_stock_insight/issues",
-  "requirements": ["praw>=7.7.1"],
-  "version": "0.0.3"
+  "issue_tracker": "https://github.com/BestMasterChief/meme_stock_insight/issues",
+  "requirements": ["praw>=7.7.1", "yfinance>=0.2.18"],
+  "version": "0.0.4"
 }
