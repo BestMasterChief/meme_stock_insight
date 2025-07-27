@@ -2,48 +2,87 @@
   "config": {
     "step": {
       "user": {
-        "title": "Setup Meme Stock Insight",
-        "description": "Configure your Meme Stock Insight integration. You'll need Reddit API credentials to get started. Visit {reddit_setup_url} to create a **script-type** app and get your credentials.",
+        "title": "Meme Stock Insight Setup",
+        "description": "Configure your Reddit API credentials and monitoring preferences.",
         "data": {
           "reddit_client_id": "Reddit Client ID",
           "reddit_client_secret": "Reddit Client Secret",
           "reddit_username": "Reddit Username",
           "reddit_password": "Reddit Password",
-          "polygon_api_key": "Polygon.io API Key (Optional)",
-          "trading212_api_key": "Trading212 API Key (Optional)",
-          "subreddits": "Subreddits (comma-separated)",
-          "update_interval": "Update Interval (hours)",
-          "min_posts": "Minimum Posts Required",
-          "min_karma": "Minimum Karma Required"
+          "subreddits": "Subreddits to Monitor (comma-separated)",
+          "stock_symbols": "Stock Symbols to Track (comma-separated)",
+          "scan_limit": "Number of Posts to Scan"
+        },
+        "data_description": {
+          "reddit_client_id": "The 14-character Client ID from your Reddit script app",
+          "reddit_client_secret": "The Client Secret from your Reddit script app",
+          "reddit_username": "Your Reddit username (must own the app)",
+          "reddit_password": "Your Reddit password",
+          "subreddits": "List of subreddits to monitor (e.g., wallstreetbets,stocks,investing)",
+          "stock_symbols": "Stock symbols to specifically track (e.g., GME,AMC,TSLA)",
+          "scan_limit": "Maximum number of posts to analyze per scan (10-1000)"
         }
       }
     },
     "error": {
       "reddit_auth_failed": "Failed to authenticate with Reddit. Ensure your app is created as 'script' type, credentials are correct, and the username owns the Reddit app.",
-      "reddit_wrong_app": "Reddit app must be created as a 'script' application. Please check your app settings.",
-      "reddit_invalid_user_agent": "User agent rejected by Reddit. Please ensure proper format is used.",
-      "invalid_subreddit": "One or more subreddit names are invalid.",
-      "api_error": "Error connecting to external APIs. Please check your internet connection.",
-      "unknown": "An unexpected error occurred. Please try again."
+      "reddit_wrong_app": "Reddit app must be created as a 'script' application. Please check your app settings at https://www.reddit.com/prefs/apps",
+      "api_error": "Error connecting to external APIs. Please check your internet connection and try again.",
+      "unknown": "An unknown error occurred. Please check the logs for more details."
     },
     "abort": {
-      "already_configured": "This integration is already configured."
+      "already_configured": "This Reddit account is already configured."
     }
   },
   "options": {
     "step": {
-      "init": {
-        "title": "Configure Meme Stock Insight Options",
-        "description": "Adjust settings for your Meme Stock Insight integration.",
+      "user": {
+        "title": "Update Meme Stock Insight Options",
+        "description": "Modify your monitoring preferences.",
         "data": {
-          "subreddits": "Subreddits (comma-separated)",
-          "update_interval": "Update Interval (hours)",
-          "min_posts": "Minimum Posts Required",
-          "min_karma": "Minimum Karma Required",
-          "volume_weight": "Volume Weight",
-          "sentiment_weight": "Sentiment Weight",
-          "momentum_weight": "Momentum Weight",
-          "short_interest_weight": "Short Interest Weight"
+          "subreddits": "Subreddits to Monitor",
+          "stock_symbols": "Stock Symbols to Track",
+          "scan_limit": "Number of Posts to Scan"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "mentions": {
+        "name": "Meme Stock Mentions",
+        "state_attributes": {
+          "mention_details": {
+            "name": "Mention Details"
+          },
+          "total_symbols_found": {
+            "name": "Total Symbols Found"
+          }
+        }
+      },
+      "sentiment": {
+        "name": "Meme Stock Sentiment",
+        "state_attributes": {
+          "sentiment_by_stock": {
+            "name": "Sentiment by Stock"
+          },
+          "stocks_analyzed": {
+            "name": "Stocks Analyzed"
+          }
+        }
+      },
+      "trending": {
+        "name": "Trending Meme Stocks",
+        "state_attributes": {
+          "trending_details": {
+            "name": "Trending Details"
+          },
+          "top_stock": {
+            "name": "Top Stock"
+          },
+          "top_mentions": {
+            "name": "Top Mentions"
+          }
         }
       }
     }

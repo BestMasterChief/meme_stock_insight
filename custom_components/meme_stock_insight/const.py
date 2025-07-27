@@ -1,59 +1,78 @@
 """Constants for the Meme Stock Insight integration."""
+from datetime import timedelta
 
+# Integration domain
 DOMAIN = "meme_stock_insight"
 
 # Version
 VERSION = "0.0.3"
 
-# Default configuration values
-DEFAULT_UPDATE_INTERVAL = 12  # hours
-DEFAULT_CACHE_DURATION = 72  # hours for instrument cache
-DEFAULT_SUBREDDITS = ["wallstreetbets", "stocks", "SecurityAnalysis", "investing"]
-DEFAULT_MIN_POSTS = 5  # Minimum posts to consider a stock
-DEFAULT_MIN_KARMA = 100  # Minimum karma for post consideration
+# Update intervals
+DEFAULT_SCAN_INTERVAL = timedelta(minutes=30)
 
-# API endpoints
-REDDIT_BASE_URL = "https://www.reddit.com"
-POLYGON_BASE_URL = "https://api.polygon.io"
-TRADING212_BASE_URL = "https://live.trading212.com/api/v0"
+# Default configuration
+DEFAULT_SUBREDDITS = ["wallstreetbets", "stocks", "investing", "SecurityAnalysis", "ValueInvesting"]
+DEFAULT_STOCK_SYMBOLS = ["GME", "AMC", "TSLA", "AAPL", "NVDA", "MSFT", "SPY", "QQQ"]
+DEFAULT_SCAN_LIMIT = 100
 
-# Entity attributes
-ATTR_TICKER = "ticker"
-ATTR_NAME = "name"
-ATTR_IMPACT_SCORE = "impact_score"
-ATTR_MEME_LIKELIHOOD = "meme_likelihood"
-ATTR_DAYS_ACTIVE = "days_active"
-ATTR_STAGE = "stage"
-ATTR_SHORTABLE = "shortable"
-ATTR_DECLINE_FLAG = "decline_flag"
-ATTR_VOLUME_SCORE = "volume_score"
-ATTR_SENTIMENT_SCORE = "sentiment_score"
-ATTR_MOMENTUM_SCORE = "momentum_score"
-ATTR_SHORT_INTEREST = "short_interest"
-
-# Meme stock stages
-STAGE_INITIATION = "Initiation"
-STAGE_UPRAMP = "Up-Ramp"
-STAGE_TIPPING = "Tipping Point"
-STAGE_DO_NOT_INVEST = "Do Not Invest"
-
-# Weighting factors for impact score (must sum to 1.0)
-WEIGHT_VOLUME = 0.40
-WEIGHT_SENTIMENT = 0.30
-WEIGHT_MOMENTUM = 0.20
-WEIGHT_SHORT_INTEREST = 0.10
-
-# User agent format
-USER_AGENT_TEMPLATE = "homeassistant:meme_stock_insight:v{version} (by /u/{username})"
-
-# Rate limiting
+# Reddit configuration
+REDDIT_USER_AGENT_TEMPLATE = "homeassistant:meme_stock_insight:v{version} (by /u/{username})"
 REDDIT_RATE_LIMIT_SECONDS = 5
 
-# Common false positive tickers to filter out
-FALSE_POSITIVE_TICKERS = {
-    "THE", "AND", "FOR", "ARE", "BUT", "NOT", "YOU", "ALL", "CAN", "HER", "WAS", 
-    "ONE", "OUR", "OUT", "DAY", "GET", "HAS", "HIM", "HIS", "HOW", "ITS", "MAY", 
-    "NEW", "NOW", "OLD", "SEE", "TWO", "WHO", "BOY", "DID", "ITV", "LOL", "OMG", 
-    "WTF", "CEO", "CFO", "CTO", "IPO", "SEC", "FDA", "NYC", "USA", "EUR", "USD", 
-    "GBP", "BTC", "ETH", "GMT", "EST", "PST", "PDT", "EDT", "MST", "CST", "CDT"
+# Sensor configuration
+SENSOR_TYPES = {
+    "mentions": {
+        "name": "Meme Stock Mentions",
+        "icon": "mdi:chart-line",
+        "unit": "mentions",
+    },
+    "sentiment": {
+        "name": "Meme Stock Sentiment",
+        "icon": "mdi:emoticon-happy",
+        "unit": "score",
+    },
+    "trending": {
+        "name": "Trending Meme Stocks",
+        "icon": "mdi:trending-up",
+        "unit": "stocks",
+    }
 }
+
+# False positive filtering - Common words that aren't stock symbols
+FALSE_POSITIVE_FILTERS = {
+    "common_words": [
+        "A", "I", "BE", "GO", "IT", "AT", "OR", "SO", "US", "UP", "TO", "ON", "IN", "IS", "IF", "OF", "MY", "BY", 
+        "DO", "AM", "AN", "AS", "WE", "NO", "ME", "ALL", "ANY", "CAN", "GET", "GOT", "HAD", "HAS", "HER", "HIM", 
+        "HIS", "HOW", "ITS", "MAY", "NEW", "NOW", "OLD", "OUR", "OUT", "SEE", "THE", "TOP", "TWO", "WAY", "WHO", 
+        "BOY", "DID", "EAT", "FAR", "FOR", "FUN", "GUY", "JOB", "LOT", "MAN", "NEW", "NOW", "OFF", "OLD", "ONE", 
+        "OWN", "PUT", "RUN", "SAY", "SHE", "SIT", "TRY", "USE", "WIN", "YES", "YET", "YOU", "BAD", "BAG", "BED", 
+        "BIG", "BIT", "BOX", "BUS", "BUT", "BUY", "CAR", "CAT", "CUP", "CUT", "DAY", "DOG", "EAR", "END", "EYE", 
+        "FAR", "FEW", "GOD", "GUN", "HAD", "HIT", "HOT", "LAW", "LEG", "LET", "LOT", "MAN", "MAP", "NET", "NOT", 
+        "OIL", "PAN", "PAY", "PEN", "PET", "PIG", "POT", "RED", "RUN", "SUN", "TAX", "TEA", "TOY", "VAN", "WAR", 
+        "WET", "WIN", "WON", "ARM", "ART", "ASK", "BAD", "BAG", "BAR", "BAT", "BED", "BET", "BIG", "BIT", "BOX", 
+        "BUS", "BUT", "BUY", "CAR", "CAT", "COW", "CRY", "CUP", "CUT", "DAD", "DAY", "DIG", "DOG", "EAR", "EAT", 
+        "EGG", "END", "EYE", "FAD", "FAR", "FAT", "FEW", "FLY", "FOR", "FUN", "GOD", "GOT", "GUN", "HAD", "HAT", 
+        "HIT", "HOT", "HUG", "JOB", "LAW", "LEG", "LET", "LOT", "MAN", "MAP", "NET", "NOT", "OIL", "PAN", "PAY", 
+        "PEN", "PET", "PIG", "POT", "RED", "RUN", "SUN", "TAX", "TEA", "TOY", "VAN", "WAR", "WET", "WIN", "WON",
+        "AND", "ARE", "BUT", "CAN", "FOR", "HAD", "HAS", "HER", "HIM", "HIS", "NOT", "ONE", "OUR", "OUT", "SHE", 
+        "THE", "WAS", "WHY", "WITH", "WILL", "WHAT", "WHEN", "WHERE", "BEEN", "HAVE", "THEY", "THEM", "THAN", "THAT", 
+        "THIS", "THERE", "THEIR", "THESE", "THOSE", "WOULD", "COULD", "SHOULD", "AFTER", "BEFORE", "DURING", "THROUGH"
+    ],
+    "reddit_slang": [
+        "DD", "YOLO", "FD", "WSB", "HODL", "DRS", "GME", "APE", "MOON", "DIAMOND", "HANDS", "PAPER", "ROCKET", 
+        "TENDIES", "RETARD", "AUTIST", "SMOOTH", "BRAIN", "WRINKLE", "BANANA", "CRAYON", "WIFE", "BOYFRIEND", 
+        "LOSS", "PORN", "GAIN", "PORN", "MEME", "STONK", "STONKS", "CALLS", "PUTS", "FD", "CHAD", "VIRGIN"
+    ]
+}
+
+# Minimum configuration requirements
+MIN_SUBREDDITS = 1
+MAX_SUBREDDITS = 10
+MIN_SCAN_LIMIT = 10
+MAX_SCAN_LIMIT = 1000
+
+# Error messages
+ERROR_REDDIT_AUTH = "Failed to authenticate with Reddit. Ensure your app is created as 'script' type."
+ERROR_REDDIT_WRONG_APP = "Reddit app must be created as a 'script' application."
+ERROR_API_CONNECTION = "Error connecting to external APIs. Please check your internet connection."
+ERROR_UNKNOWN = "An unknown error occurred. Please check the logs for more details."
