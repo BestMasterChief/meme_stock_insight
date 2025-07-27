@@ -1,11 +1,12 @@
 {
   "domain": "meme_stock_insight",
   "name": "Meme Stock Insight",
-  "version": "0.0.3",
-  "documentation": "https://github.com/yourusername/meme_stock_insight",
-  "issue_tracker": "https://github.com/yourusername/meme_stock_insight/issues",
   "codeowners": ["@yourusername"],
-  "requirements": ["praw>=7.7.1", "requests>=2.31.0"],
   "config_flow": true,
-  "iot_class": "cloud_polling"
+  "dependencies": [],
+  "documentation": "https://github.com/yourusername/meme_stock_insight",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/yourusername/meme_stock_insight/issues",
+  "requirements": ["praw>=7.7.1"],
+  "version": "0.0.3"
 }

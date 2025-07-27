@@ -1,8 +1,8 @@
 {
   "name": "Meme Stock Insight",
   "render_readme": true,
-  "domains": ["sensor"],
-  "homeassistant": "2023.1.0",
+  "domains": ["meme_stock_insight"],
+  "homeassistant": "2024.1.0",
   "iot_class": "cloud_polling",
   "version": "0.0.3"
 }

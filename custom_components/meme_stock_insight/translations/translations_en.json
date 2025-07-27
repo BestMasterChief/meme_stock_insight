@@ -6,7 +6,7 @@
         "description": "Enter your Reddit API credentials and configuration options.",
         "data": {
           "client_id": "Reddit Client ID",
-          "client_secret": "Reddit Client Secret",
+          "client_secret": "Reddit Client Secret", 
           "username": "Reddit Username",
           "password": "Reddit Password",
           "subreddits": "Subreddits (comma-separated)",
