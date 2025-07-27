@@ -1,6 +1,7 @@
 """Config flow for Meme Stock Insight integration."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -10,7 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 
-from .const import DOMAIN
+from .const import DOMAIN, DEFAULT_SUBREDDITS, DEFAULT_UPDATE_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -20,56 +21,12 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Required("client_secret"): str,
         vol.Required("username"): str,
         vol.Required("password"): str,
-        vol.Optional("subreddits", default="wallstreetbets,stocks,investing"): str,
-        vol.Optional("update_interval", default=300): int,
+        vol.Optional("subreddits", default=DEFAULT_SUBREDDITS): str,
+        vol.Optional("update_interval", default=DEFAULT_UPDATE_INTERVAL): vol.All(
+            vol.Coerce(int), vol.Range(min=60, max=3600)
+        ),
     }
 )
-
-
-async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
-    """Validate the user input allows us to connect.
-
-    Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
-    """
-
-    def _validate_reddit_credentials(client_id: str, client_secret: str, username: str, password: str) -> None:
-        """Validate Reddit credentials in executor thread."""
-        import praw
-        import prawcore
-
-        try:
-            reddit = praw.Reddit(
-                client_id=client_id.strip(),
-                client_secret=client_secret.strip() or None,
-                user_agent=f"homeassistant:meme_stock_insight:v0.0.3 (by /u/{username.strip()})",
-                username=username.strip(),
-                password=password,
-                ratelimit_seconds=5,
-                check_for_updates=False,  # Disable update check to prevent blocking calls
-                check_for_async=False,    # Disable async check since we're in executor
-            )
-            me = reddit.user.me()  # triggers the login
-            if me is None:
-                raise ValueError("Credentials accepted but read-only; app is not a script-type or wrong user.")
-        except prawcore.exceptions.OAuthException as err:
-            raise ValueError("OAuth refused: check app type (must be script), client_id/secret, and user-agent.") from err
-        except prawcore.exceptions.ResponseException as err:
-            raise ConnectionError(f"Reddit API refused connection: {err}") from err
-        except Exception as err:
-            raise ConnectionError(f"Unexpected error connecting to Reddit: {err}") from err
-
-    # Run the validation in executor to avoid blocking the event loop
-    await hass.async_add_executor_job(
-        _validate_reddit_credentials,
-        data["client_id"],
-        data["client_secret"],
-        data["username"],
-        data["password"]
-    )
-
-    # Return info that you want to store in the config entry.
-    return {"title": f"Meme Stock Insight ({data['username']})"}
-
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Meme Stock Insight."""
@@ -81,23 +38,140 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Handle the initial step."""
         errors: dict[str, str] = {}
+
         if user_input is not None:
             try:
-                info = await validate_input(self.hass, user_input)
-            except ValueError as err:
-                _LOGGER.warning("Reddit authentication failed: %s", err)
+                # Check if already configured
+                await self.async_set_unique_id(user_input["username"])
+                self._abort_if_unique_id_configured()
+
+                # Validate Reddit credentials
+                await self._validate_reddit_credentials(
+                    user_input["client_id"],
+                    user_input["client_secret"],
+                    user_input["username"],
+                    user_input["password"],
+                )
+
+                # Create the config entry
+                return self.async_create_entry(
+                    title=f"Meme Stock Insight ({user_input['username']})",
+                    data=user_input,
+                )
+
+            except AlreadyConfigured:
+                return self.async_abort(reason="already_configured")
+            except InvalidAuth:
                 errors["base"] = "reddit_auth_failed"
-            except ConnectionError as err:
-                _LOGGER.warning("Connection error: %s", err)
-                errors["base"] = "api_error"
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except asyncio.TimeoutError:
+                errors["base"] = "timeout"
             except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Unexpected error during validation")
+                _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
-            else:
-                return self.async_create_entry(title=info["title"], data=user_input)
 
         return self.async_show_form(
-            step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
+            step_id="user",
+            data_schema=STEP_USER_DATA_SCHEMA,
+            errors=errors,
+            description_placeholders={
+                "reddit_app_url": "https://www.reddit.com/prefs/apps",
+                "default_subreddits": DEFAULT_SUBREDDITS,
+                "default_interval": str(DEFAULT_UPDATE_INTERVAL),
+            },
+        )
+
+    async def _validate_reddit_credentials(
+        self, client_id: str, client_secret: str, username: str, password: str
+    ) -> None:
+        """Validate Reddit credentials."""
+
+        def _validate_credentials():
+            """Validate credentials in executor thread."""
+            import praw
+            import prawcore
+
+            try:
+                reddit = praw.Reddit(
+                    client_id=client_id.strip(),
+                    client_secret=client_secret.strip() or None,
+                    user_agent=f"homeassistant:meme_stock_insight:v0.0.3 (by /u/{username.strip()})",
+                    username=username.strip(),
+                    password=password,
+                    ratelimit_seconds=5,
+                    check_for_updates=False,
+                    check_for_async=False,
+                    timeout=20,
+                )
+
+                # Test authentication
+                me = reddit.user.me()
+                if me is None:
+                    raise InvalidAuth("Authentication successful but read-only mode detected")
+
+                _LOGGER.info(f"Reddit credentials validated for user: {me.name}")
+                return True
+
+            except prawcore.exceptions.OAuthException as err:
+                _LOGGER.error(f"Reddit OAuth error: {err}")
+                raise InvalidAuth from err
+            except prawcore.exceptions.ResponseException as err:
+                _LOGGER.error(f"Reddit API error: {err}")
+                if "401" in str(err) or "403" in str(err):
+                    raise InvalidAuth from err
+                raise CannotConnect from err
+            except Exception as err:
+                _LOGGER.error(f"Unexpected Reddit error: {err}")
+                raise CannotConnect from err
+
+        try:
+            await asyncio.wait_for(
+                self.hass.async_add_executor_job(_validate_credentials),
+                timeout=30
+            )
+        except asyncio.TimeoutError:
+            _LOGGER.error("Reddit credential validation timed out")
+            raise
+
+    @staticmethod
+    def async_get_options_flow(config_entry):
+        """Return the options flow."""
+        return OptionsFlow(config_entry)
+
+
+class OptionsFlow(config_entries.OptionsFlow):
+    """Handle options flow for Meme Stock Insight."""
+
+    def __init__(self, config_entry):
+        """Initialize options flow."""
+        self.config_entry = config_entry
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Manage the options."""
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        "subreddits",
+                        default=self.config_entry.options.get(
+                            "subreddits", self.config_entry.data.get("subreddits", DEFAULT_SUBREDDITS)
+                        ),
+                    ): str,
+                    vol.Optional(
+                        "update_interval",
+                        default=self.config_entry.options.get(
+                            "update_interval", self.config_entry.data.get("update_interval", DEFAULT_UPDATE_INTERVAL)
+                        ),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=60, max=3600)),
+                }
+            ),
         )
 
 
@@ -107,3 +181,7 @@ class CannotConnect(HomeAssistantError):
 
 class InvalidAuth(HomeAssistantError):
     """Error to indicate there is invalid auth."""
+
+
+class AlreadyConfigured(HomeAssistantError):
+    """Error to indicate integration is already configured."""

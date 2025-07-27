@@ -1,4 +1,4 @@
-"""Data update coordinator for Meme Stock Insight - Optimized for fast startup."""
+"""Data update coordinator for Meme Stock Insight - Balanced approach."""
 from __future__ import annotations
 
 import asyncio
@@ -41,9 +41,9 @@ class MemeStockInsightCoordinator(DataUpdateCoordinator):
         self.client_secret = client_secret
         self.username = username
         self.password = password
-        self.subreddits = subreddits.split(",")
+        self.subreddits = [s.strip() for s in subreddits.split(",")]
         self.reddit = None
-        self._initialization_count = 0
+        self._setup_complete = False
 
         super().__init__(
             hass,
@@ -55,58 +55,33 @@ class MemeStockInsightCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self) -> dict[str, Any]:
         """Update data via library."""
         try:
-            self._initialization_count += 1
-            
-            # First call: Just return minimal data, don't even setup Reddit
-            if self._initialization_count == 1:
-                _LOGGER.debug("First refresh - returning minimal data structure")
-                return self._get_minimal_startup_data()
-            
-            # Second call: Setup Reddit connection
-            if self._initialization_count == 2:
-                _LOGGER.debug("Second refresh - setting up Reddit connection")
+            # Setup Reddit client if not already done
+            if not self._setup_complete:
                 await self._async_setup_reddit()
-                return self._get_connection_established_data()
+                self._setup_complete = True
+                _LOGGER.info("Reddit client setup completed")
+
+            # Fetch data from Reddit with timeout protection
+            data = await asyncio.wait_for(
+                self.hass.async_add_executor_job(self._fetch_reddit_data),
+                timeout=90  # 90 second timeout for data fetching
+            )
             
-            # Third call and beyond: Fetch real data
-            _LOGGER.debug("Regular refresh - fetching Reddit data")
-            return await self._async_fetch_data_with_timeout()
+            _LOGGER.debug(f"Fetched data: {data.get('total_mentions', 0)} mentions, "
+                         f"{data.get('posts_processed', 0)} posts processed")
+            return data
 
+        except asyncio.TimeoutError:
+            _LOGGER.warning("Reddit data fetch timed out, returning fallback data")
+            return self._get_fallback_data("timeout")
         except Exception as exc:
-            _LOGGER.error("Error in coordinator update: %s", exc)
-            # Return fallback data instead of raising to prevent integration failure
-            return self._get_error_fallback_data(str(exc))
-
-    def _get_minimal_startup_data(self) -> dict[str, Any]:
-        """Return absolute minimal data for first startup."""
-        return {
-            "total_mentions": 0,
-            "average_sentiment": 0.0,
-            "trending_count": 0,
-            "stock_mentions": {},
-            "sentiment_distribution": {"positive": 0, "neutral": 0, "negative": 0},
-            "trending_stocks": [],
-            "last_updated": datetime.now().isoformat(),
-            "status": "starting"
-        }
-
-    def _get_connection_established_data(self) -> dict[str, Any]:
-        """Return data after connection is established."""
-        return {
-            "total_mentions": 0,
-            "average_sentiment": 0.0,
-            "trending_count": 0,
-            "stock_mentions": {},
-            "sentiment_distribution": {"positive": 0, "neutral": 0, "negative": 0},
-            "trending_stocks": [],
-            "last_updated": datetime.now().isoformat(),
-            "status": "connected"
-        }
+            _LOGGER.error(f"Error fetching Reddit data: {exc}")
+            return self._get_fallback_data(f"error: {str(exc)[:50]}")
 
     async def _async_setup_reddit(self) -> None:
-        """Set up Reddit client in executor thread with aggressive timeout."""
-        def _quick_setup():
-            """Quick Reddit setup with minimal validation."""
+        """Set up Reddit client in executor thread."""
+        def _setup_reddit():
+            """Setup Reddit client with proper configuration."""
             try:
                 reddit = praw.Reddit(
                     client_id=self.client_id.strip(),
@@ -117,106 +92,93 @@ class MemeStockInsightCoordinator(DataUpdateCoordinator):
                     ratelimit_seconds=5,
                     check_for_updates=False,
                     check_for_async=False,
-                    timeout=15,  # Short timeout
+                    timeout=30,
                 )
                 
-                # Very quick validation - just try to access user info with timeout
-                try:
-                    me = reddit.user.me()
-                    if me is None:
-                        raise ValueError("Authentication failed")
-                    _LOGGER.debug(f"Reddit authentication successful for user: {me.name}")
-                except Exception as e:
-                    _LOGGER.warning(f"Reddit user validation failed, but continuing: {e}")
-                    # Continue anyway - the connection might still work for data fetching
+                # Validate authentication
+                me = reddit.user.me()
+                if me is None:
+                    raise ValueError("Authentication failed - ensure app is script type")
                 
+                _LOGGER.info(f"Reddit authentication successful for user: {me.name}")
                 return reddit
                 
             except Exception as exc:
                 _LOGGER.error(f"Reddit setup failed: {exc}")
-                raise
+                raise UpdateFailed(f"Reddit setup failed: {exc}")
 
         try:
-            # Very short timeout for setup
             self.reddit = await asyncio.wait_for(
-                self.hass.async_add_executor_job(_quick_setup),
-                timeout=10  # Only 10 seconds for setup
+                self.hass.async_add_executor_job(_setup_reddit),
+                timeout=45  # 45 second timeout for setup
             )
-            _LOGGER.debug("Reddit client setup completed")
-            
         except asyncio.TimeoutError:
-            _LOGGER.error("Reddit setup timed out after 10 seconds")
-            raise UpdateFailed("Reddit setup timeout - will retry on next update")
-        except Exception as exc:
-            _LOGGER.error(f"Reddit setup failed: {exc}")
-            raise UpdateFailed(f"Reddit setup failed: {exc}")
+            raise UpdateFailed("Reddit setup timed out")
 
-    async def _async_fetch_data_with_timeout(self) -> dict[str, Any]:
-        """Fetch Reddit data with timeout protection."""
-        if self.reddit is None:
-            _LOGGER.warning("Reddit client not initialized, setting up now")
-            await self._async_setup_reddit()
-        
-        try:
-            # Aggressive timeout for data fetching
-            data = await asyncio.wait_for(
-                self.hass.async_add_executor_job(self._fetch_reddit_data_fast),
-                timeout=45  # 45 second timeout
-            )
-            return data
-            
-        except asyncio.TimeoutError:
-            _LOGGER.warning("Reddit data fetch timed out, returning cached data")
-            return self.data or self._get_timeout_fallback_data()
-        except Exception as exc:
-            _LOGGER.error(f"Reddit data fetch failed: {exc}")
-            return self._get_error_fallback_data(str(exc))
-
-    def _fetch_reddit_data_fast(self) -> dict[str, Any]:
-        """Fast Reddit data fetch with minimal processing."""
+    def _fetch_reddit_data(self) -> dict[str, Any]:
+        """Fetch Reddit data with reasonable limits."""
         try:
             stock_mentions = {}
             sentiment_scores = []
             processed_posts = 0
-            max_posts_per_subreddit = 10  # Very limited for speed
-            max_comments_per_post = 5     # Very limited for speed
             
-            for subreddit_name in self.subreddits[:2]:  # Only process first 2 subreddits
+            # Process up to 5 subreddits, 30 posts each
+            max_subreddits = min(5, len(self.subreddits))
+            max_posts_per_subreddit = 30
+            max_comments_per_post = 10
+            
+            for subreddit_name in self.subreddits[:max_subreddits]:
                 try:
+                    _LOGGER.debug(f"Processing subreddit: {subreddit_name}")
                     subreddit = self.reddit.subreddit(subreddit_name.strip())
                     
-                    # Very limited hot posts
+                    # Get hot posts
                     posts = list(subreddit.hot(limit=max_posts_per_subreddit))
                     
                     for submission in posts:
-                        if processed_posts >= 20:  # Hard limit on total posts
+                        if processed_posts >= 100:  # Maximum total posts
                             break
-                            
-                        # Process title quickly
-                        self._process_text_fast(submission.title, stock_mentions, sentiment_scores)
+                        
+                        # Process submission title and text
+                        self._process_text(submission.title, stock_mentions, sentiment_scores)
+                        if hasattr(submission, 'selftext') and submission.selftext:
+                            self._process_text(submission.selftext[:1000], stock_mentions, sentiment_scores)
+                        
                         processed_posts += 1
                         
-                        # Skip comments if we're running behind
-                        if processed_posts < 15:
-                            try:
-                                # Very minimal comment processing
-                                submission.comments.replace_more(limit=0)
-                                for comment in submission.comments[:max_comments_per_post]:
-                                    if hasattr(comment, 'body') and len(comment.body) < 500:
-                                        self._process_text_fast(comment.body, stock_mentions, sentiment_scores)
-                            except Exception:
-                                continue  # Skip problematic comments
-                                
+                        # Process comments (limited)
+                        try:
+                            submission.comments.replace_more(limit=1)
+                            comment_count = 0
+                            for comment in submission.comments:
+                                if comment_count >= max_comments_per_post:
+                                    break
+                                if hasattr(comment, 'body') and len(comment.body) < 1000:
+                                    self._process_text(comment.body, stock_mentions, sentiment_scores)
+                                    comment_count += 1
+                        except Exception as e:
+                            _LOGGER.debug(f"Error processing comments: {e}")
+                            continue
+                            
+                except prawcore.exceptions.Forbidden:
+                    _LOGGER.warning(f"Access forbidden to subreddit: {subreddit_name}")
+                    continue
                 except Exception as e:
-                    _LOGGER.debug(f"Error processing subreddit {subreddit_name}: {e}")
+                    _LOGGER.warning(f"Error processing subreddit {subreddit_name}: {e}")
                     continue
 
-            # Quick metrics calculation
+            # Calculate final metrics
             total_mentions = sum(stock_mentions.values())
             average_sentiment = sum(sentiment_scores) / len(sentiment_scores) if sentiment_scores else 0.0
-            trending_stocks = sorted(stock_mentions.items(), key=lambda x: x[1], reverse=True)[:5]
             
-            # Simple sentiment distribution
+            # Get trending stocks (stocks with 2+ mentions)
+            trending_stocks = [
+                {"symbol": symbol, "mentions": count}
+                for symbol, count in sorted(stock_mentions.items(), key=lambda x: x[1], reverse=True)
+                if count >= 2
+            ]
+            
+            # Sentiment distribution
             positive = sum(1 for s in sentiment_scores if s > 0.1)
             negative = sum(1 for s in sentiment_scores if s < -0.1)
             neutral = len(sentiment_scores) - positive - negative
@@ -224,49 +186,57 @@ class MemeStockInsightCoordinator(DataUpdateCoordinator):
             return {
                 "total_mentions": total_mentions,
                 "average_sentiment": round(average_sentiment, 3),
-                "trending_count": len([s for s, c in stock_mentions.items() if c >= 2]),
-                "stock_mentions": dict(trending_stocks),
-                "sentiment_distribution": {"positive": positive, "neutral": neutral, "negative": negative},
-                "trending_stocks": [{"symbol": s, "mentions": c} for s, c in trending_stocks],
+                "trending_count": len(trending_stocks),
+                "stock_mentions": dict(sorted(stock_mentions.items(), key=lambda x: x[1], reverse=True)[:20]),
+                "sentiment_distribution": {
+                    "positive": positive,
+                    "neutral": neutral,
+                    "negative": negative
+                },
+                "trending_stocks": trending_stocks[:15],
                 "last_updated": datetime.now().isoformat(),
                 "status": "success",
-                "posts_processed": processed_posts
+                "posts_processed": processed_posts,
+                "subreddits_processed": [s for s in self.subreddits[:max_subreddits]]
             }
             
         except Exception as exc:
-            _LOGGER.error(f"Fast Reddit data fetch failed: {exc}")
+            _LOGGER.error(f"Reddit data fetch failed: {exc}")
             raise
 
-    def _process_text_fast(self, text: str, stock_mentions: dict, sentiment_scores: list) -> None:
-        """Ultra-fast text processing."""
-        if not text or len(text) > 500:  # Skip long texts
+    def _process_text(self, text: str, stock_mentions: dict, sentiment_scores: list) -> None:
+        """Process text for stock mentions and sentiment."""
+        if not text or len(text) > 2000:  # Skip very long texts
             return
             
-        # Quick regex for stock symbols
+        # Find stock symbols (2-5 capital letters)
         words = re.findall(r'\b[A-Z]{2,5}\b', text.upper())
         
-        for word in words:
+        for word in words[:50]:  # Limit words processed per text
             if word in MEME_STOCK_SYMBOLS:
-                # Minimal false positive check
-                if word in ["IT", "A", "AM", "GO"] and word.lower() in text.lower():
-                    continue
+                # Check for false positives
+                if word in FALSE_POSITIVE_KEYWORDS:
+                    text_lower = text.lower()
+                    if any(fp_word in text_lower for fp_word in FALSE_POSITIVE_KEYWORDS[word][:5]):
+                        continue
+                
                 stock_mentions[word] = stock_mentions.get(word, 0) + 1
         
-        # Quick sentiment check
+        # Sentiment analysis
         text_lower = text.lower()
-        positive_words = ["moon", "rocket", "bullish", "buy", "gains"]
-        negative_words = ["crash", "dump", "bearish", "sell", "loss"]
         
-        pos_count = sum(1 for word in positive_words if word in text_lower)
-        neg_count = sum(1 for word in negative_words if word in text_lower)
+        # Count positive and negative keywords
+        positive_count = sum(1 for word in SENTIMENT_KEYWORDS_POSITIVE if word in text_lower)
+        negative_count = sum(1 for word in SENTIMENT_KEYWORDS_NEGATIVE if word in text_lower)
         
-        if pos_count > neg_count:
-            sentiment_scores.append(0.5)
-        elif neg_count > pos_count:
-            sentiment_scores.append(-0.5)
+        # Calculate sentiment score
+        if positive_count > 0 or negative_count > 0:
+            total_sentiment_words = positive_count + negative_count
+            sentiment_score = (positive_count - negative_count) / total_sentiment_words
+            sentiment_scores.append(sentiment_score)
 
-    def _get_timeout_fallback_data(self) -> dict[str, Any]:
-        """Return fallback data for timeout scenarios."""
+    def _get_fallback_data(self, status: str) -> dict[str, Any]:
+        """Return fallback data when fetch fails."""
         return {
             "total_mentions": 0,
             "average_sentiment": 0.0,
@@ -275,18 +245,7 @@ class MemeStockInsightCoordinator(DataUpdateCoordinator):
             "sentiment_distribution": {"positive": 0, "neutral": 0, "negative": 0},
             "trending_stocks": [],
             "last_updated": datetime.now().isoformat(),
-            "status": "timeout_fallback"
-        }
-
-    def _get_error_fallback_data(self, error_msg: str) -> dict[str, Any]:
-        """Return fallback data for error scenarios."""
-        return {
-            "total_mentions": 0,
-            "average_sentiment": 0.0,
-            "trending_count": 0,
-            "stock_mentions": {},
-            "sentiment_distribution": {"positive": 0, "neutral": 0, "negative": 0},
-            "trending_stocks": [],
-            "last_updated": datetime.now().isoformat(),
-            "status": f"error: {error_msg[:100]}"  # Truncate long errors
+            "status": status,
+            "posts_processed": 0,
+            "subreddits_processed": []
         }

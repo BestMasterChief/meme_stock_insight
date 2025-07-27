@@ -3,33 +3,48 @@
     "step": {
       "user": {
         "title": "Meme Stock Insight Configuration",
-        "description": "Enter your Reddit API credentials and configuration options. Make sure your Reddit app is created as 'script' type.",
+        "description": "Configure your Reddit API credentials to track meme stock discussions.\n\n**IMPORTANT:** Your Reddit app must be created as 'script' type at {reddit_app_url}\n\nDefault settings:\n- Subreddits: {default_subreddits}\n- Update interval: {default_interval} seconds",
         "data": {
           "client_id": "Reddit Client ID",
           "client_secret": "Reddit Client Secret",
           "username": "Reddit Username",
           "password": "Reddit Password",
-          "subreddits": "Subreddits (comma-separated)",
-          "update_interval": "Update Interval (seconds)"
+          "subreddits": "Subreddits to monitor (comma-separated)",
+          "update_interval": "Update interval (60-3600 seconds)"
+        },
+        "data_description": {
+          "client_id": "The 14-character client ID from your Reddit script app",
+          "client_secret": "The client secret from your Reddit script app",
+          "username": "Your Reddit username (must own the app)",
+          "password": "Your Reddit password",
+          "subreddits": "List of subreddits to monitor, separated by commas",
+          "update_interval": "How often to check Reddit for new data (minimum 60 seconds)"
         }
       }
     },
     "error": {
-      "reddit_auth_failed": "Failed to authenticate with Reddit. Ensure your app is created as 'script' type, credentials are correct, and the username owns the Reddit app.",
-      "timeout": "Reddit authentication timed out. Please check your internet connection and try again.",
-      "unknown": "Unexpected error occurred during setup."
+      "reddit_auth_failed": "Failed to authenticate with Reddit. Please verify:\n1. Your Reddit app is created as 'script' type\n2. Client ID and Client Secret are correct\n3. Username and password are correct\n4. The username owns the Reddit app",
+      "cannot_connect": "Cannot connect to Reddit API. Please check your internet connection and try again.",
+      "timeout": "Reddit authentication timed out. Please check your connection and try again.",
+      "unknown": "An unexpected error occurred. Please check your credentials and try again.",
+      "already_configured": "This Reddit account is already configured."
     },
     "abort": {
-      "already_configured": "Service is already configured"
+      "already_configured": "Integration is already configured for this Reddit account."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Meme Stock Insight Options",
+        "description": "Modify your Meme Stock Insight settings. Changes will take effect after the next update cycle.",
         "data": {
-          "subreddits": "Subreddits (comma-separated)",
-          "update_interval": "Update Interval (seconds)"
+          "subreddits": "Subreddits to monitor (comma-separated)",
+          "update_interval": "Update interval (60-3600 seconds)"
+        },
+        "data_description": {
+          "subreddits": "List of subreddits to monitor for stock discussions",
+          "update_interval": "How often to fetch new data from Reddit"
         }
       }
     }
