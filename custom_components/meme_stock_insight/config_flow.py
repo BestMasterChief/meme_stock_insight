@@ -21,8 +21,8 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Required("client_secret"): str,
         vol.Required("username"): str,
         vol.Required("password"): str,
-        vol.Optional("subreddits", default=DEFAULT_SUBREDDITS): str,
-        vol.Optional("update_interval", default=DEFAULT_UPDATE_INTERVAL): vol.All(
+        vol.Optional("subreddits", default=",".join(DEFAULT_SUBREDDITS)): str,
+        vol.Optional("update_interval", default=300): vol.All(
             vol.Coerce(int), vol.Range(min=60, max=3600)
         ),
     }
@@ -53,6 +53,11 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     user_input["password"],
                 )
 
+                # Process subreddits input
+                if "subreddits" in user_input:
+                    subreddits = [s.strip() for s in user_input["subreddits"].split(",")]
+                    user_input["subreddits"] = subreddits
+
                 # Create the config entry
                 return self.async_create_entry(
                     title=f"Meme Stock Insight ({user_input['username']})",
@@ -67,8 +72,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "cannot_connect"
             except asyncio.TimeoutError:
                 errors["base"] = "timeout"
-            except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Unexpected exception")
+            except Exception as exc:  # pylint: disable=broad-except
+                _LOGGER.exception("Unexpected exception during setup: %s", exc)
                 errors["base"] = "unknown"
 
         return self.async_show_form(
@@ -77,8 +82,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
             description_placeholders={
                 "reddit_app_url": "https://www.reddit.com/prefs/apps",
-                "default_subreddits": DEFAULT_SUBREDDITS,
-                "default_interval": str(DEFAULT_UPDATE_INTERVAL),
+                "default_subreddits": ",".join(DEFAULT_SUBREDDITS),
+                "default_interval": "300",
             },
         )
 
@@ -89,14 +94,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         def _validate_credentials():
             """Validate credentials in executor thread."""
-            import praw
-            import prawcore
-
             try:
+                import praw
+                import prawcore
+
                 reddit = praw.Reddit(
                     client_id=client_id.strip(),
                     client_secret=client_secret.strip() or None,
-                    user_agent=f"homeassistant:meme_stock_insight:v0.0.3 (by /u/{username.strip()})",
+                    user_agent=f"homeassistant:meme_stock_insight:v0.6.0 (by /u/{username.strip()})",
                     username=username.strip(),
                     password=password,
                     ratelimit_seconds=5,
@@ -110,19 +115,19 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if me is None:
                     raise InvalidAuth("Authentication successful but read-only mode detected")
 
-                _LOGGER.info(f"Reddit credentials validated for user: {me.name}")
+                _LOGGER.info("Reddit credentials validated for user: %s", me.name)
                 return True
 
             except prawcore.exceptions.OAuthException as err:
-                _LOGGER.error(f"Reddit OAuth error: {err}")
+                _LOGGER.error("Reddit OAuth error: %s", err)
                 raise InvalidAuth from err
             except prawcore.exceptions.ResponseException as err:
-                _LOGGER.error(f"Reddit API error: {err}")
+                _LOGGER.error("Reddit API error: %s", err)
                 if "401" in str(err) or "403" in str(err):
                     raise InvalidAuth from err
                 raise CannotConnect from err
             except Exception as err:
-                _LOGGER.error(f"Unexpected Reddit error: {err}")
+                _LOGGER.error("Unexpected Reddit error: %s", err)
                 raise CannotConnect from err
 
         try:
@@ -152,7 +157,17 @@ class OptionsFlow(config_entries.OptionsFlow):
     ) -> FlowResult:
         """Manage the options."""
         if user_input is not None:
+            # Process subreddits input
+            if "subreddits" in user_input:
+                subreddits = [s.strip() for s in user_input["subreddits"].split(",")]
+                user_input["subreddits"] = subreddits
             return self.async_create_entry(title="", data=user_input)
+
+        current_subreddits = self.config_entry.options.get(
+            "subreddits", self.config_entry.data.get("subreddits", DEFAULT_SUBREDDITS)
+        )
+        if isinstance(current_subreddits, list):
+            current_subreddits = ",".join(current_subreddits)
 
         return self.async_show_form(
             step_id="init",
@@ -160,16 +175,22 @@ class OptionsFlow(config_entries.OptionsFlow):
                 {
                     vol.Optional(
                         "subreddits",
-                        default=self.config_entry.options.get(
-                            "subreddits", self.config_entry.data.get("subreddits", DEFAULT_SUBREDDITS)
-                        ),
+                        default=current_subreddits,
                     ): str,
                     vol.Optional(
                         "update_interval",
                         default=self.config_entry.options.get(
-                            "update_interval", self.config_entry.data.get("update_interval", DEFAULT_UPDATE_INTERVAL)
+                            "update_interval", self.config_entry.data.get("update_interval", 300)
                         ),
                     ): vol.All(vol.Coerce(int), vol.Range(min=60, max=3600)),
+                    vol.Optional(
+                        "alpha_vantage_key",
+                        default=self.config_entry.options.get("alpha_vantage_key", ""),
+                    ): str,
+                    vol.Optional(
+                        "polygon_key", 
+                        default=self.config_entry.options.get("polygon_key", ""),
+                    ): str,
                 }
             ),
         )

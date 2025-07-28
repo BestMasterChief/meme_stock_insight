@@ -17,9 +17,9 @@ MAX_COMMENTS_PER_POST = 10
 # Price provider configuration
 PRICE_PROVIDERS = ["yfinance", "alpha_vantage", "polygon"]
 API_LIMITS = {
-    "yfinance": 0,          # Unlimited for free tier
-    "alpha_vantage": 500,   # Free tier daily limit
-    "polygon": 5000,        # Free tier daily limit
+    "yfinance": 0,  # Unlimited for free tier
+    "alpha_vantage": 500,  # Free tier daily limit
+    "polygon": 5000,  # Free tier daily limit
 }
 QUOTA_RESET_INTERVAL = timedelta(days=1)
 

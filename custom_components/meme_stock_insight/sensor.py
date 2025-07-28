@@ -1,119 +1,167 @@
-"""Sensor platform for Meme Stock Insight v0.6.0
-Adds new entities: days_active, price_since_start and dynamic_subreddit.
-"""
+"""Sensor platform for Meme Stock Insight integration."""
 from __future__ import annotations
 
+import logging
+from typing import Any
+
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.const import PERCENTAGE, UnitOfTime, Currency
-from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
-    DOMAIN,
-    VERSION,
     ATTRIBUTION,
+    DOMAIN,
+    SENSOR_DAYS_ACTIVE,
+    SENSOR_DYNAMIC_SUBREDDIT,
     SENSOR_MENTIONS,
-    SENSOR_SENTIMENT,
-    SENSOR_TRENDING,
     SENSOR_MEME_1,
     SENSOR_MEME_2,
     SENSOR_MEME_3,
-    SENSOR_STAGE,
-    SENSOR_DAYS_ACTIVE,
     SENSOR_PRICE_SINCE_START,
-    SENSOR_DYNAMIC_SUBREDDIT,
+    SENSOR_SENTIMENT,
+    SENSOR_STAGE,
+    SENSOR_TRENDING,
+    VERSION,
 )
 
-TOP_SENSORS = [SENSOR_MEME_1, SENSOR_MEME_2, SENSOR_MEME_3]
+_LOGGER = logging.getLogger(__name__)
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, add_entities: AddEntitiesCallback):
-    coordinator = hass.data[DOMAIN][entry.entry_id]
 
-    entities = [
-        MemeInsightSensor(coordinator, SENSOR_MENTIONS, "Total Mentions"),
-        MemeInsightSensor(coordinator, SENSOR_SENTIMENT, "Market Sentiment", PERCENTAGE),
-        MemeInsightSensor(coordinator, SENSOR_TRENDING, "Trending Stocks"),
-        MemeInsightSensor(coordinator, SENSOR_STAGE, "Meme Stock Stage"),
-        MemeInsightSensor(coordinator, SENSOR_DAYS_ACTIVE, "Days Active", UnitOfTime.DAYS),
-        MemeInsightSensor(coordinator, SENSOR_PRICE_SINCE_START, "Price Since Start", PERCENTAGE),
-        MemeInsightSensor(coordinator, SENSOR_DYNAMIC_SUBREDDIT, "Dynamic Subreddit"),
+async def async_setup_entry(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Set up the Meme Stock Insight sensors."""
+    coordinator = hass.data[DOMAIN][config_entry.entry_id]
+
+    sensors = [
+        MemeStockSensor(coordinator, SENSOR_MENTIONS, "Stock Mentions", "mdi:chart-line"),
+        MemeStockSensor(coordinator, SENSOR_SENTIMENT, "Market Sentiment", "mdi:emoticon-happy"),
+        MemeStockSensor(coordinator, SENSOR_TRENDING, "Trending Stocks", "mdi:trending-up"),
+        MemeStockTopSensor(coordinator, SENSOR_MEME_1, "Meme Stock #1", "mdi:trophy", 0),
+        MemeStockTopSensor(coordinator, SENSOR_MEME_2, "Meme Stock #2", "mdi:medal", 1),
+        MemeStockTopSensor(coordinator, SENSOR_MEME_3, "Meme Stock #3", "mdi:podium-bronze", 2),
+        MemeStockSensor(coordinator, SENSOR_STAGE, "Meme Stock Stage", "mdi:chart-timeline"),
+        MemeStockSensor(coordinator, SENSOR_DAYS_ACTIVE, "Days Active", "mdi:calendar-clock"),
+        MemeStockSensor(coordinator, SENSOR_PRICE_SINCE_START, "Price Since Start", "mdi:cash-plus"),
+        MemeStockSensor(coordinator, SENSOR_DYNAMIC_SUBREDDIT, "Dynamic Subreddit", "mdi:reddit"),
     ]
 
-    for idx, sensor_id in enumerate(TOP_SENSORS, start=1):
-        entities.append(TopMemeSensor(coordinator, sensor_id, f"Meme Stock #{idx}"))
+    async_add_entities(sensors)
 
-    add_entities(entities)
 
-class MemeInsightSensor(CoordinatorEntity, SensorEntity):
+class MemeStockSensor(CoordinatorEntity, SensorEntity):
+    """Base sensor for Meme Stock Insight."""
+
+    _attr_attribution = ATTRIBUTION
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator, sensor_id: str, name: str, unit: str | None = None):
+    def __init__(self, coordinator, sensor_id: str, name: str, icon: str):
+        """Initialize the sensor."""
         super().__init__(coordinator)
         self._sensor_id = sensor_id
         self._attr_name = name
+        self._attr_icon = icon
         self._attr_unique_id = f"{DOMAIN}_{sensor_id}"
-        self._attr_native_unit_of_measurement = unit
-        self._attr_attribution = ATTRIBUTION
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
+        """Return the state of the sensor."""
         data = self.coordinator.data or {}
+        
         if self._sensor_id == SENSOR_MENTIONS:
-            return data.get("total_mentions")
-        if self._sensor_id == SENSOR_SENTIMENT:
-            return data.get("average_sentiment")
-        if self._sensor_id == SENSOR_TRENDING:
-            return data.get("trending_count")
-        if self._sensor_id == SENSOR_STAGE:
-            return data.get("stage")
-        if self._sensor_id == SENSOR_DAYS_ACTIVE:
-            top = data.get("top_entities", [])
-            return top[0].get("days_active") if top else None
-        if self._sensor_id == SENSOR_PRICE_SINCE_START:
-            top = data.get("top_entities", [])
-            return top[0].get("price_since_start") if top else None
-        if self._sensor_id == SENSOR_DYNAMIC_SUBREDDIT:
-            return data.get("dynamic_subreddit")
+            return data.get("total_mentions", 0)
+        elif self._sensor_id == SENSOR_SENTIMENT:
+            return data.get("average_sentiment", 0.0)
+        elif self._sensor_id == SENSOR_TRENDING:
+            return len(data.get("trending", []))
+        elif self._sensor_id == SENSOR_STAGE:
+            return data.get("stage", "Start")
+        elif self._sensor_id == SENSOR_DAYS_ACTIVE:
+            top_entities = data.get("top_entities", [])
+            return top_entities[0].get("days_active", 0) if top_entities else 0
+        elif self._sensor_id == SENSOR_PRICE_SINCE_START:
+            top_entities = data.get("top_entities", [])
+            return top_entities[0].get("price_since_start", 0.0) if top_entities else 0.0
+        elif self._sensor_id == SENSOR_DYNAMIC_SUBREDDIT:
+            return getattr(self.coordinator, '_dynamic_sr', None) or "None"
+        
         return None
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional state attributes."""
         data = self.coordinator.data or {}
+        attributes = {
+            "integration_version": VERSION,
+            "last_updated": data.get("last_updated"),
+        }
+
         if self._sensor_id == SENSOR_MENTIONS:
-            return {"stock_mentions": data.get("mentions_dict"), "integration": VERSION}
-        if self._sensor_id == SENSOR_SENTIMENT:
-            return {"distribution": data.get("sentiment_distribution")}
-        if self._sensor_id == SENSOR_TRENDING:
-            return {"trending_list": data.get("trending")}
-        if self._sensor_id in (SENSOR_STAGE,):
-            return {"reason": data.get("stage_reason")}
-        return {"integration": VERSION}
+            attributes["mentions_breakdown"] = data.get("mentions_dict", {})
+        elif self._sensor_id == SENSOR_SENTIMENT:
+            attributes["trending_stocks"] = data.get("trending", [])
+        elif self._sensor_id == SENSOR_TRENDING:
+            attributes["trending_list"] = data.get("trending", [])
 
-class TopMemeSensor(CoordinatorEntity, SensorEntity):
+        return attributes
+
+
+class MemeStockTopSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for individual top meme stocks."""
+
+    _attr_attribution = ATTRIBUTION
     _attr_has_entity_name = True
-    _attr_device_class = "monetary"
-    _attr_native_unit_of_measurement = Currency.USD
 
-    def __init__(self, coordinator, sensor_id: str, name: str):
+    def __init__(self, coordinator, sensor_id: str, name: str, icon: str, index: int):
+        """Initialize the top stock sensor."""
         super().__init__(coordinator)
         self._sensor_id = sensor_id
+        self._index = index
         self._attr_name = name
+        self._attr_icon = icon
         self._attr_unique_id = f"{DOMAIN}_{sensor_id}"
 
     @property
-    def native_value(self):
+    def native_value(self) -> str:
+        """Return the stock symbol and company name."""
         data = self.coordinator.data or {}
-        idx = TOP_SENSORS.index(self._sensor_id)
-        if idx < len(data.get("top_entities", [])):
-            return data["top_entities"][idx].get("current_price")
-        return None
+        top_entities = data.get("top_entities", [])
+        
+        if self._index < len(top_entities):
+            entity = top_entities[self._index]
+            symbol = entity.get("symbol", "")
+            company = entity.get("company", "")
+            return f"{symbol} - {company}" if symbol and company else symbol or "No data"
+        
+        return "No data"
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes for the top stock."""
         data = self.coordinator.data or {}
-        idx = TOP_SENSORS.index(self._sensor_id)
-        if idx < len(data.get("top_entities", [])):
-            return data["top_entities"][idx]
-        return {}
+        top_entities = data.get("top_entities", [])
+        
+        attributes = {
+            "integration_version": VERSION,
+            "rank": self._index + 1,
+        }
+        
+        if self._index < len(top_entities):
+            entity = top_entities[self._index]
+            attributes.update({
+                "symbol": entity.get("symbol"),
+                "company_name": entity.get("company"),
+                "mentions": entity.get("mentions", 0),
+                "current_price": entity.get("current_price"),
+                "price_change_pct": entity.get("price_change_pct", 0.0),
+                "volume": entity.get("volume", 0),
+                "days_active": entity.get("days_active", 0),
+                "price_since_start": entity.get("price_since_start", 0.0),
+                "provider": entity.get("provider", "unknown"),
+            })
+        
+        return attributes
