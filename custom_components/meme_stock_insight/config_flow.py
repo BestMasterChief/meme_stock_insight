@@ -176,23 +176,32 @@ class OptionsFlow(config_entries.OptionsFlow):
                     vol.Optional(
                         "subreddits",
                         default=current_subreddits,
+                        description="Comma-separated list of subreddits to monitor",
                     ): str,
                     vol.Optional(
                         "update_interval",
                         default=self.config_entry.options.get(
                             "update_interval", self.config_entry.data.get("update_interval", 300)
                         ),
+                        description="Update interval in seconds (60-3600)",
                     ): vol.All(vol.Coerce(int), vol.Range(min=60, max=3600)),
                     vol.Optional(
                         "alpha_vantage_key",
                         default=self.config_entry.options.get("alpha_vantage_key", ""),
+                        description="Alpha Vantage API key (optional backup for price data)",
                     ): str,
                     vol.Optional(
                         "polygon_key", 
                         default=self.config_entry.options.get("polygon_key", ""),
+                        description="Polygon.io API key (optional backup for price data)",
                     ): str,
                 }
             ),
+            description_placeholders={
+                "backup_info": "Adding backup API keys prevents 'exhausted' status when Yahoo Finance is blocked",
+                "alpha_url": "https://www.alphavantage.co/support/#api-key",
+                "polygon_url": "https://polygon.io/",
+            },
         )
 
 

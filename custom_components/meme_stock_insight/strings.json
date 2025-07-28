@@ -2,50 +2,74 @@
   "config": {
     "step": {
       "user": {
-        "title": "Meme Stock Insight Configuration",
-        "description": "Configure your Reddit API credentials to track meme stock discussions.\n\n**IMPORTANT:** Your Reddit app must be created as 'script' type at {reddit_app_url}\n\nDefault settings:\n- Subreddits: {default_subreddits}\n- Update interval: {default_interval} seconds",
+        "title": "Meme Stock Insight Setup",
+        "description": "Configure your Reddit API credentials and monitoring settings. You'll need a Reddit 'script' type app from {reddit_app_url}",
         "data": {
-          "client_id": "Reddit Client ID",
-          "client_secret": "Reddit Client Secret",
-          "username": "Reddit Username",
+          "client_id": "Client ID (14-character string from Reddit app)",
+          "client_secret": "Client Secret (from Reddit app)",
+          "username": "Reddit Username (must own the Reddit app)",
           "password": "Reddit Password",
-          "subreddits": "Subreddits to monitor (comma-separated)",
-          "update_interval": "Update interval (60-3600 seconds)"
-        },
-        "data_description": {
-          "client_id": "The 14-character client ID from your Reddit script app",
-          "client_secret": "The client secret from your Reddit script app",
-          "username": "Your Reddit username (must own the app)",
-          "password": "Your Reddit password",
-          "subreddits": "List of subreddits to monitor, separated by commas",
-          "update_interval": "How often to check Reddit for new data (minimum 60 seconds)"
+          "subreddits": "Subreddits to monitor (comma-separated, default: {default_subreddits})",
+          "update_interval": "Update interval in seconds (default: {default_interval})"
         }
       }
     },
     "error": {
-      "reddit_auth_failed": "Failed to authenticate with Reddit. Please verify:\n1. Your Reddit app is created as 'script' type\n2. Client ID and Client Secret are correct\n3. Username and password are correct\n4. The username owns the Reddit app",
-      "cannot_connect": "Cannot connect to Reddit API. Please check your internet connection and try again.",
-      "timeout": "Reddit authentication timed out. Please check your connection and try again.",
-      "unknown": "An unexpected error occurred. Please check your credentials and try again.",
+      "reddit_auth_failed": "Reddit authentication failed. Ensure your app type is 'script', credentials are correct, and the username owns the Reddit app.",
+      "cannot_connect": "Unable to connect to Reddit API. Check your internet connection and Reddit API status.",
+      "timeout": "Connection timeout. Please try again.",
+      "unknown": "Unknown error occurred. Check Home Assistant logs for details.",
       "already_configured": "This Reddit account is already configured."
     },
     "abort": {
-      "already_configured": "Integration is already configured for this Reddit account."
+      "already_configured": "This Reddit account is already configured."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Meme Stock Insight Options",
-        "description": "Modify your Meme Stock Insight settings. Changes will take effect after the next update cycle.",
+        "description": "Configure monitoring settings and backup API keys. {backup_info}",
         "data": {
-          "subreddits": "Subreddits to monitor (comma-separated)",
-          "update_interval": "Update interval (60-3600 seconds)"
-        },
-        "data_description": {
-          "subreddits": "List of subreddits to monitor for stock discussions",
-          "update_interval": "How often to fetch new data from Reddit"
+          "subreddits": "Subreddits to monitor",
+          "update_interval": "Update interval (seconds)",
+          "alpha_vantage_key": "Alpha Vantage API Key (get free key: {alpha_url})",
+          "polygon_key": "Polygon.io API Key (get free key: {polygon_url})"
         }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "stock_mentions": {
+        "name": "Stock Mentions"
+      },
+      "market_sentiment": {
+        "name": "Market Sentiment"
+      },
+      "trending_stocks": {
+        "name": "Trending Stocks"
+      },
+      "meme_stock_1": {
+        "name": "Meme Stock #1"
+      },
+      "meme_stock_2": {
+        "name": "Meme Stock #2"
+      },
+      "meme_stock_3": {
+        "name": "Meme Stock #3"
+      },
+      "meme_stock_stage": {
+        "name": "Meme Stock Stage"
+      },
+      "days_active": {
+        "name": "Days Active"
+      },
+      "price_since_start": {
+        "name": "Price Since Start"
+      },
+      "dynamic_subreddit": {
+        "name": "Dynamic Subreddit"
       }
     }
   }

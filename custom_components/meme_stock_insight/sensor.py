@@ -1,4 +1,4 @@
-"""Sensor platform for Meme Stock Insight integration."""
+"""Sensor platform for Meme Stock Insight integration - Fixed provider handling."""
 from __future__ import annotations
 
 import logging
@@ -102,6 +102,9 @@ class MemeStockSensor(CoordinatorEntity, SensorEntity):
 
         if self._sensor_id == SENSOR_MENTIONS:
             attributes["mentions_breakdown"] = data.get("mentions_dict", {})
+            # Add provider status info
+            attributes["providers_exhausted"] = data.get("providers_exhausted", [])
+            attributes["providers_available"] = data.get("providers_available", [])
         elif self._sensor_id == SENSOR_SENTIMENT:
             attributes["trending_stocks"] = data.get("trending", [])
         elif self._sensor_id == SENSOR_TRENDING:
@@ -127,7 +130,7 @@ class MemeStockTopSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self) -> str:
-        """Return the stock symbol and company name."""
+        """Return the stock symbol and company name or status."""
         data = self.coordinator.data or {}
         top_entities = data.get("top_entities", [])
         
@@ -135,9 +138,37 @@ class MemeStockTopSensor(CoordinatorEntity, SensorEntity):
             entity = top_entities[self._index]
             symbol = entity.get("symbol", "")
             company = entity.get("company", "")
-            return f"{symbol} - {company}" if symbol and company else symbol or "No data"
+            provider_status = entity.get("provider", "")
+            
+            # Handle different provider statuses
+            if provider_status == "max_api_calls_used":
+                return "Max API calls used"
+            elif provider_status == "recently_failed":
+                return "Recently failed to fetch"
+            elif provider_status == "no_data_available":
+                return "No price data found, symbol may be delisted"
+            elif provider_status == "error":
+                return "Error fetching data"
+            elif entity.get("current_price") is None:
+                return f"{symbol} - Price unavailable"
+            else:
+                return f"{symbol} - {company}" if symbol and company else symbol or "No data"
         
         return "No data"
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        data = self.coordinator.data or {}
+        top_entities = data.get("top_entities", [])
+        
+        if self._index < len(top_entities):
+            entity = top_entities[self._index]
+            provider_status = entity.get("provider", "")
+            # Entity is available even if provider status indicates issues
+            return provider_status not in ["error"]
+        
+        return False
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -152,6 +183,8 @@ class MemeStockTopSensor(CoordinatorEntity, SensorEntity):
         
         if self._index < len(top_entities):
             entity = top_entities[self._index]
+            provider_status = entity.get("provider", "unknown")
+            
             attributes.update({
                 "symbol": entity.get("symbol"),
                 "company_name": entity.get("company"),
@@ -161,7 +194,17 @@ class MemeStockTopSensor(CoordinatorEntity, SensorEntity):
                 "volume": entity.get("volume", 0),
                 "days_active": entity.get("days_active", 0),
                 "price_since_start": entity.get("price_since_start", 0.0),
-                "provider": entity.get("provider", "unknown"),
+                "provider": provider_status,
             })
+            
+            # Add helpful info based on provider status
+            if provider_status == "max_api_calls_used":
+                attributes["info"] = "All price providers have reached their daily limits. Configure backup API keys in integration options."
+            elif provider_status == "recently_failed":
+                attributes["info"] = "Symbol failed recently and is temporarily skipped to prevent repeated errors."
+            elif provider_status == "no_data_available":
+                attributes["info"] = "No price data available from any provider. Symbol may be delisted or inactive."
+            elif provider_status in ["yfinance", "alpha_vantage", "polygon"]:
+                attributes["info"] = f"Price data successfully fetched from {provider_status}"
         
         return attributes

@@ -1,4 +1,4 @@
-"""__init__.py for Meme Stock Insight v0.6.0 - Fixed version"""
+"""__init__.py for Meme Stock Insight v0.6.0 - Fixed version with better error handling"""
 from __future__ import annotations
 
 import logging
@@ -71,7 +71,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)
-        
+    
     return unload_ok
 
 
