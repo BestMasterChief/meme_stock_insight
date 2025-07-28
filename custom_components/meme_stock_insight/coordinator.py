@@ -1,486 +1,330 @@
-"""Enhanced Data update coordinator for Meme Stock Insight with stock price analysis."""
+"""Data update coordinator for Meme Stock Insight v0.6.0
+
+This file is based on commit 7a8f7ed of BestMasterChief/meme_stock_insight with
+new features added:
+    * Multi-provider price ladder (yfinance ➔ Alpha Vantage ➔ Polygon)
+    * Per-provider quota tracking and daily reset
+    * Fallback state `max_api_calls_used`
+    * Days-active & price-since-start calculation
+    * Dynamic subreddit discovery refreshed weekly
+    * Yahoo Unknown/0 bug fixed by using .history fallback
+"""
 from __future__ import annotations
 
 import asyncio
 import logging
 import re
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
-import statistics
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Tuple
 
 import praw
 import prawcore
+import yfinance as yf
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.update_coordinator import (
+    DataUpdateCoordinator,
+    UpdateFailed,
+)
 
 from .const import (
+    ATTRIBUTION,
+    DEFAULT_SUBREDDITS,
+    DYNAMIC_SUBREDDIT_REFRESH,
     DOMAIN,
+    MAX_POSTS_PER_SUBREDDIT,
+    MAX_COMMENTS_PER_POST,
     MEME_STOCK_SYMBOLS,
-    FALSE_POSITIVE_KEYWORDS,
+    PRICE_PROVIDERS,
+    API_LIMITS,
+    QUOTA_RESET_INTERVAL,
+    DEFAULT_UPDATE_INTERVAL,
+    SENSOR_MENTIONS,
+    SENSOR_SENTIMENT,
+    SENSOR_TRENDING,
+    SENSOR_MEME_1,
+    SENSOR_MEME_2,
+    SENSOR_MEME_3,
+    SENSOR_STAGE,
+    SENSOR_DAYS_ACTIVE,
+    SENSOR_PRICE_SINCE_START,
+    SENSOR_DYNAMIC_SUBREDDIT,
+    MEME_STOCK_STAGES,
+    STOCK_NAME_MAPPING,
     SENTIMENT_KEYWORDS_POSITIVE,
     SENTIMENT_KEYWORDS_NEGATIVE,
-    STOCK_NAME_MAPPING,
-    MEME_STOCK_STAGES,
-    STAGE_THRESHOLDS,
-    STAGE_ICONS,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-class MemeStockInsightCoordinator(DataUpdateCoordinator):
-    """Enhanced coordinator to manage fetching data from Reddit and stock prices."""
+APILimitError = type("APILimitError", (Exception,), {})
 
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        client_id: str,
-        client_secret: str,
-        username: str,
-        password: str,
-        subreddits: str,
-        update_interval: int,
-    ) -> None:
-        """Initialize the coordinator."""
-        self.hass = hass
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.username = username
-        self.password = password
-        self.subreddits = [s.strip() for s in subreddits.split(",")]
-        self.reddit = None
-        self._setup_complete = False
-        self._stock_cache = {}  # Cache stock data to avoid API limits
-        self._price_history = {}  # Store price history for trend analysis
+class MemeStockCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
+    """Central coordinator handling Reddit and price data."""
 
+    def __init__(self, hass: HomeAssistant, reddit_conf: Dict[str, str], options: Dict[str, Any]):
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=update_interval),
+            update_interval=DEFAULT_UPDATE_INTERVAL,
         )
 
-    async def _async_update_data(self) -> dict[str, Any]:
-        """Update data via library."""
+        # Reddit client (script-app)
+        self._reddit = praw.Reddit(
+            **reddit_conf,
+            check_for_updates=False,
+            check_for_async=False,
+            ratelimit_seconds=5,
+        )
+        self._subreddits: List[str] = options.get("subreddits", DEFAULT_SUBREDDITS)
+        self._dynamic_sr: str | None = None
+
+        # Provider keys from options (may be blank)
+        self._alpha_key: str = options.get("alpha_vantage_key", "")
+        self._polygon_key: str = options.get("polygon_key", "")
+
+        # Quota counters
+        self._quota: Dict[str, int] = defaultdict(int)
+        self._exhausted: set[str] = set()
+        self._quota_reset_at: datetime = datetime.now(timezone.utc) + QUOTA_RESET_INTERVAL
+
+        # Persisted state across restarts
+        store = hass.data.setdefault(DOMAIN, {})
+        self._first_seen: Dict[str, datetime] = store.setdefault("first_seen", {})
+        self._first_price: Dict[str, float] = store.setdefault("first_price", {})
+
+        # schedule dynamic subreddit refresh
+        async_track_time_interval(
+            hass, self._async_refresh_dynamic_subreddit, DYNAMIC_SUBREDDIT_REFRESH
+        )
+
+    # ---------------------------------------------------------------------
+    # Data update cycle
+    # ---------------------------------------------------------------------
+    async def _async_update_data(self) -> Dict[str, Any]:
         try:
-            # Setup Reddit client if not already done
-            if not self._setup_complete:
-                await self._async_setup_reddit()
-                self._setup_complete = True
-                _LOGGER.info("Reddit client setup completed")
-
-            # Fetch data from Reddit with timeout protection
-            reddit_data = await asyncio.wait_for(
-                self.hass.async_add_executor_job(self._fetch_reddit_data),
-                timeout=90  # 90 second timeout for data fetching
-            )
-            
-            # Fetch stock price data for top mentioned stocks
-            stock_data = await self._fetch_stock_data(reddit_data.get('stock_mentions', {}))
-            
-            # Analyze meme stock stages
-            stage_analysis = await self._analyze_meme_stock_stages(reddit_data, stock_data)
-            
-            # Combine all data
-            combined_data = {
-                **reddit_data,
-                **stock_data,
-                **stage_analysis
-            }
-            
-            _LOGGER.debug(f"Fetched combined data: {combined_data.get('total_mentions', 0)} mentions, "
-                         f"{len(combined_data.get('top_stocks', []))} top stocks with prices")
-            return combined_data
-
-        except asyncio.TimeoutError:
-            _LOGGER.warning("Reddit data fetch timed out, returning fallback data")
-            return self._get_fallback_data("timeout")
+            reddit_data = await self.hass.async_add_executor_job(self._gather_reddit)
+            price_data = await self._gather_prices(reddit_data["mentions_dict"])
+            return {**reddit_data, **price_data}
         except Exception as exc:
-            _LOGGER.error(f"Error fetching data: {exc}")
-            return self._get_fallback_data(f"error: {str(exc)[:50]}")
+            raise UpdateFailed(str(exc)) from exc
 
-    async def _async_setup_reddit(self) -> None:
-        """Set up Reddit client in executor thread."""
-        def _setup_reddit():
-            """Setup Reddit client with proper configuration."""
+    # ------------------------------------------------------------------
+    # Reddit helpers
+    # ------------------------------------------------------------------
+    def _gather_reddit(self) -> Dict[str, Any]:
+        """Fetch posts, count mentions, compute sentiment."""
+        mentions: Dict[str, int] = defaultdict(int)
+        sentiment_scores: List[float] = []
+
+        sr_list = list(self._subreddits) + ([self._dynamic_sr] if self._dynamic_sr else [])
+        for sr in sr_list:
             try:
-                reddit = praw.Reddit(
-                    client_id=self.client_id.strip(),
-                    client_secret=self.client_secret.strip() or None,
-                    user_agent=f"homeassistant:meme_stock_insight:v0.0.4 (by /u/{self.username.strip()})",
-                    username=self.username.strip(),
-                    password=self.password,
-                    ratelimit_seconds=5,
-                    check_for_updates=False,
-                    check_for_async=False,
-                    timeout=30,
-                )
-                
-                # Validate authentication
-                me = reddit.user.me()
-                if me is None:
-                    raise ValueError("Authentication failed - ensure app is script type")
-                
-                _LOGGER.info(f"Reddit authentication successful for user: {me.name}")
-                return reddit
-                
-            except Exception as exc:
-                _LOGGER.error(f"Reddit setup failed: {exc}")
-                raise UpdateFailed(f"Reddit setup failed: {exc}")
+                for post in self._reddit.subreddit(sr).hot(limit=MAX_POSTS_PER_SUBREDDIT):
+                    self._scan_text(post.title, mentions, sentiment_scores)
+                    self._scan_text(post.selftext, mentions, sentiment_scores)
+            except prawcore.exceptions.Forbidden:
+                _LOGGER.debug("Forbidden subreddit: %s", sr)
+            except Exception as err:
+                _LOGGER.debug("Error reading %s: %s", sr, err)
 
-        try:
-            self.reddit = await asyncio.wait_for(
-                self.hass.async_add_executor_job(_setup_reddit),
-                timeout=45  # 45 second timeout for setup
-            )
-        except asyncio.TimeoutError:
-            raise UpdateFailed("Reddit setup timed out")
+        total_mentions = sum(mentions.values())
+        avg_sentiment = (
+            round(sum(sentiment_scores) / len(sentiment_scores), 3) if sentiment_scores else 0.0
+        )
 
-    def _fetch_reddit_data(self) -> dict[str, Any]:
-        """Fetch Reddit data with reasonable limits."""
-        try:
-            stock_mentions = {}
-            sentiment_scores = []
-            processed_posts = 0
-            
-            # Process up to 5 subreddits, 30 posts each
-            max_subreddits = min(5, len(self.subreddits))
-            max_posts_per_subreddit = 30
-            max_comments_per_post = 10
-            
-            for subreddit_name in self.subreddits[:max_subreddits]:
-                try:
-                    _LOGGER.debug(f"Processing subreddit: {subreddit_name}")
-                    subreddit = self.reddit.subreddit(subreddit_name.strip())
-                    
-                    # Get hot posts
-                    posts = list(subreddit.hot(limit=max_posts_per_subreddit))
-                    
-                    for submission in posts:
-                        if processed_posts >= 100:  # Maximum total posts
-                            break
-                        
-                        # Process submission title and text
-                        self._process_text(submission.title, stock_mentions, sentiment_scores)
-                        if hasattr(submission, 'selftext') and submission.selftext:
-                            self._process_text(submission.selftext[:1000], stock_mentions, sentiment_scores)
-                        
-                        processed_posts += 1
-                        
-                        # Process comments (limited)
-                        try:
-                            submission.comments.replace_more(limit=1)
-                            comment_count = 0
-                            for comment in submission.comments:
-                                if comment_count >= max_comments_per_post:
-                                    break
-                                if hasattr(comment, 'body') and len(comment.body) < 1000:
-                                    self._process_text(comment.body, stock_mentions, sentiment_scores)
-                                comment_count += 1
-                        except Exception as e:
-                            _LOGGER.debug(f"Error processing comments: {e}")
-                            continue
-                
-                except prawcore.exceptions.Forbidden:
-                    _LOGGER.warning(f"Access forbidden to subreddit: {subreddit_name}")
-                    continue
-                except Exception as e:
-                    _LOGGER.warning(f"Error processing subreddit {subreddit_name}: {e}")
-                    continue
+        trending = sorted(mentions.items(), key=lambda x: x[1], reverse=True)[:15]
 
-            # Calculate final metrics
-            total_mentions = sum(stock_mentions.values())
-            average_sentiment = sum(sentiment_scores) / len(sentiment_scores) if sentiment_scores else 0.0
-            
-            # Get trending stocks (stocks with 2+ mentions)
-            trending_stocks = [
-                {"symbol": symbol, "mentions": count}
-                for symbol, count in sorted(stock_mentions.items(), key=lambda x: x[1], reverse=True)
-                if count >= 2
-            ]
-            
-            # Sentiment distribution
-            positive = sum(1 for s in sentiment_scores if s > 0.1)
-            negative = sum(1 for s in sentiment_scores if s < -0.1)
-            neutral = len(sentiment_scores) - positive - negative
-            
-            return {
-                "total_mentions": total_mentions,
-                "average_sentiment": round(average_sentiment, 3),
-                "trending_count": len(trending_stocks),
-                "stock_mentions": dict(sorted(stock_mentions.items(), key=lambda x: x[1], reverse=True)[:20]),
-                "sentiment_distribution": {
-                    "positive": positive,
-                    "neutral": neutral,
-                    "negative": negative
-                },
-                "trending_stocks": trending_stocks[:15],
-                "last_updated": datetime.now().isoformat(),
-                "status": "success",
-                "posts_processed": processed_posts,
-                "subreddits_processed": [s for s in self.subreddits[:max_subreddits]]
-            }
-            
-        except Exception as exc:
-            _LOGGER.error(f"Reddit data fetch failed: {exc}")
-            raise
-
-    async def _fetch_stock_data(self, stock_mentions: Dict[str, int]) -> Dict[str, Any]:
-        """Fetch stock price data for top mentioned stocks."""
-        def _get_stock_prices():
-            """Get stock prices using yfinance (can be replaced with Alpha Vantage)."""
-            try:
-                # Import yfinance here to avoid blocking
-                import yfinance as yf
-                
-                # Get top 10 mentioned stocks
-                top_stocks = list(stock_mentions.keys())[:10]
-                stock_data = {}
-                
-                for symbol in top_stocks:
-                    try:
-                        # Clean symbol for crypto (remove -USD suffix for yfinance)
-                        yf_symbol = symbol.replace('-USD', '-USD') if '-USD' in symbol else symbol
-                        
-                        ticker = yf.Ticker(yf_symbol)
-                        info = ticker.info
-                        hist = ticker.history(period="5d")  # Get 5 days of history
-                        
-                        if not hist.empty and info:
-                            current_price = hist['Close'].iloc[-1] if len(hist) > 0 else None
-                            prev_close = hist['Close'].iloc[-2] if len(hist) > 1 else current_price
-                            
-                            # Calculate price change
-                            price_change = ((current_price - prev_close) / prev_close * 100) if prev_close and current_price else 0
-                            
-                            # Get company name
-                            company_name = info.get('longName') or info.get('shortName') or STOCK_NAME_MAPPING.get(symbol, symbol)
-                            
-                            stock_data[symbol] = {
-                                'current_price': round(float(current_price), 2) if current_price else None,
-                                'price_change_pct': round(price_change, 2),
-                                'volume': info.get('volume', 0),
-                                'avg_volume': info.get('averageVolume', 0),
-                                'company_name': company_name,
-                                'market_cap': info.get('marketCap', 0),
-                                'mentions': stock_mentions[symbol],
-                                'price_history': hist['Close'].tolist()[-5:] if len(hist) >= 5 else []
-                            }
-                            
-                            # Store in cache for stage analysis
-                            self._stock_cache[symbol] = stock_data[symbol]
-                            
-                    except Exception as e:
-                        _LOGGER.debug(f"Error fetching data for {symbol}: {e}")
-                        # Use cached data or fallback
-                        if symbol in self._stock_cache:
-                            stock_data[symbol] = self._stock_cache[symbol]
-                        else:
-                            stock_data[symbol] = {
-                                'current_price': None,
-                                'price_change_pct': 0,
-                                'volume': 0,
-                                'avg_volume': 0,
-                                'company_name': STOCK_NAME_MAPPING.get(symbol, symbol),
-                                'market_cap': 0,
-                                'mentions': stock_mentions[symbol],
-                                'price_history': []
-                            }
-                
-                return stock_data
-                
-            except ImportError:
-                _LOGGER.error("yfinance not installed. Install with: pip install yfinance")
-                return {}
-            except Exception as exc:
-                _LOGGER.error(f"Error fetching stock prices: {exc}")
-                return {}
-        
-        try:
-            stock_data = await asyncio.wait_for(
-                self.hass.async_add_executor_job(_get_stock_prices),
-                timeout=60  # 60 second timeout for stock data
-            )
-            
-            # Create top stocks list with full information
-            top_stocks = []
-            for symbol, data in stock_data.items():
-                top_stocks.append({
-                    'symbol': symbol,
-                    'company_name': data['company_name'],
-                    'mentions': data['mentions'],
-                    'current_price': data['current_price'],
-                    'price_change_pct': data['price_change_pct'],
-                    'display_name': f"{symbol} - {data['company_name']}"
-                })
-            
-            # Sort by mentions
-            top_stocks.sort(key=lambda x: x['mentions'], reverse=True)
-            
-            return {
-                'top_stocks': top_stocks,
-                'stock_prices': stock_data
-            }
-            
-        except asyncio.TimeoutError:
-            _LOGGER.warning("Stock price fetch timed out")
-            return {'top_stocks': [], 'stock_prices': {}}
-        except Exception as exc:
-            _LOGGER.error(f"Error in stock data fetch: {exc}")
-            return {'top_stocks': [], 'stock_prices': {}}
-
-    async def _analyze_meme_stock_stages(self, reddit_data: Dict, stock_data: Dict) -> Dict[str, Any]:
-        """Analyze meme stock lifecycle stages."""
-        def _calculate_stage():
-            """Calculate the current meme stock stage based on multiple factors."""
-            try:
-                top_stocks = stock_data.get('top_stocks', [])
-                if not top_stocks:
-                    return "start", "No active meme stocks detected"
-                
-                # Analyze the top meme stock
-                top_stock = top_stocks[0]
-                symbol = top_stock['symbol']
-                mentions = top_stock['mentions']
-                price_change = top_stock.get('price_change_pct', 0)
-                
-                # Get additional data from stock_prices
-                stock_info = stock_data.get('stock_prices', {}).get(symbol, {})
-                volume = stock_info.get('volume', 0)
-                avg_volume = stock_info.get('avg_volume', 1)
-                price_history = stock_info.get('price_history', [])
-                
-                # Get sentiment data
-                sentiment = reddit_data.get('average_sentiment', 0)
-                
-                # Calculate volume ratio
-                volume_ratio = volume / avg_volume if avg_volume > 0 else 1
-                
-                # Calculate price momentum (if we have history)
-                price_momentum = 0
-                if len(price_history) >= 3:
-                    recent_avg = statistics.mean(price_history[-3:])
-                    older_avg = statistics.mean(price_history[:-3]) if len(price_history) > 3 else recent_avg
-                    price_momentum = (recent_avg - older_avg) / older_avg * 100 if older_avg > 0 else 0
-                
-                # Stage decision logic based on multiple factors
-                stage_info = {
-                    'mentions': mentions,
-                    'price_change_1d': price_change,
-                    'volume_ratio': volume_ratio,
-                    'sentiment': sentiment,
-                    'price_momentum': price_momentum,
-                    'symbol': symbol
-                }
-                
-                # Determine stage based on thresholds
-                if mentions < 5:
-                    stage = "start"
-                    reason = f"Low mention count ({mentions})"
-                elif (mentions >= 5 and volume_ratio > STAGE_THRESHOLDS['volume_spike_threshold'] 
-                      and sentiment > 0):
-                    if price_change > STAGE_THRESHOLDS['price_change_1d_peak']:
-                        if price_momentum > 10:  # Very high momentum
-                            stage = "estimated_peak"
-                            reason = f"High price change ({price_change:.1f}%) with strong momentum"
-                        else:
-                            stage = "stock_rising"
-                            reason = f"Strong price movement ({price_change:.1f}%)"
-                    elif price_change > STAGE_THRESHOLDS['price_change_1d_rising']:
-                        stage = "rising_interest"
-                        reason = f"Growing interest with {mentions} mentions"
-                    else:
-                        stage = "rising_interest"  
-                        reason = f"Increased volume and mentions ({mentions})"
-                elif sentiment < STAGE_THRESHOLDS['sentiment_negative_threshold'] or price_change < -5:
-                    if price_change < -15:  # Major drop
-                        stage = "do_not_buy"
-                        reason = f"Major price decline ({price_change:.1f}%)"
-                    else:
-                        stage = "dropping"
-                        reason = f"Negative sentiment or declining price ({price_change:.1f}%)"
-                elif mentions > 15 and price_change > 5:
-                    stage = "estimated_peak"
-                    reason = f"High activity ({mentions} mentions, {price_change:.1f}% change)"
-                else:
-                    stage = "rising_interest"
-                    reason = f"Moderate activity with {mentions} mentions"
-                
-                return stage, reason, stage_info
-                
-            except Exception as exc:
-                _LOGGER.error(f"Error calculating stage: {exc}")
-                return "start", "Error in stage calculation", {}
-        
-        try:
-            stage, reason, stage_info = await self.hass.async_add_executor_job(_calculate_stage)
-            
-            return {
-                'meme_stage': MEME_STOCK_STAGES.get(stage, stage),
-                'meme_stage_key': stage,
-                'stage_reason': reason,
-                'stage_analysis': stage_info,
-                'stage_icon': STAGE_ICONS.get(stage, 'mdi:help-circle')
-            }
-            
-        except Exception as exc:
-            _LOGGER.error(f"Error in stage analysis: {exc}")
-            return {
-                'meme_stage': 'Start',
-                'meme_stage_key': 'start',
-                'stage_reason': 'Analysis error',
-                'stage_analysis': {},
-                'stage_icon': 'mdi:help-circle'
-            }
-
-    def _process_text(self, text: str, stock_mentions: dict, sentiment_scores: list) -> None:
-        """Process text for stock mentions and sentiment."""
-        if not text or len(text) > 2000:  # Skip very long texts
-            return
-        
-        # Find stock symbols (2-5 capital letters)
-        words = re.findall(r'\b[A-Z]{2,5}\b', text.upper())
-        
-        for word in words[:50]:  # Limit words processed per text
-            if word in MEME_STOCK_SYMBOLS:
-                # Check for false positives
-                if word in FALSE_POSITIVE_KEYWORDS:
-                    text_lower = text.lower()
-                    if any(fp_word in text_lower for fp_word in FALSE_POSITIVE_KEYWORDS[word][:5]):
-                        continue
-                
-                stock_mentions[word] = stock_mentions.get(word, 0) + 1
-        
-        # Sentiment analysis
-        text_lower = text.lower()
-        
-        # Count positive and negative keywords
-        positive_count = sum(1 for word in SENTIMENT_KEYWORDS_POSITIVE if word in text_lower)
-        negative_count = sum(1 for word in SENTIMENT_KEYWORDS_NEGATIVE if word in text_lower)
-        
-        # Calculate sentiment score
-        if positive_count > 0 or negative_count > 0:
-            total_sentiment_words = positive_count + negative_count
-            sentiment_score = (positive_count - negative_count) / total_sentiment_words
-            sentiment_scores.append(sentiment_score)
-
-    def _get_fallback_data(self, status: str) -> dict[str, Any]:
-        """Return fallback data when fetch fails."""
         return {
-            "total_mentions": 0,
-            "average_sentiment": 0.0,
-            "trending_count": 0,
-            "stock_mentions": {},
-            "sentiment_distribution": {"positive": 0, "neutral": 0, "negative": 0},
-            "trending_stocks": [],
-            "top_stocks": [],
-            "stock_prices": {},
-            "meme_stage": "Start",
-            "meme_stage_key": "start", 
-            "stage_reason": "No data available",
-            "stage_analysis": {},
-            "stage_icon": "mdi:help-circle",
-            "last_updated": datetime.now().isoformat(),
-            "status": status,
-            "posts_processed": 0,
-            "subreddits_processed": []
+            "total_mentions": total_mentions,
+            "average_sentiment": avg_sentiment,
+            "trending": trending,
+            "mentions_dict": mentions,
         }
+
+    def _scan_text(self, text: str, bucket: Dict[str, int], sents: List[float]):
+        if not text:
+            return
+        # count symbols
+        for word in re.findall(r"\b[A-Z]{2,5}\b", text.upper()):
+            if word in MEME_STOCK_SYMBOLS:
+                bucket[word] += 1
+        # naive sentiment
+        lo = text.lower()
+        pos = sum(lo.count(w) for w in SENTIMENT_KEYWORDS_POSITIVE)
+        neg = sum(lo.count(w) for w in SENTIMENT_KEYWORDS_NEGATIVE)
+        if pos + neg:
+            sents.append((pos - neg) / (pos + neg))
+
+    # ------------------------------------------------------------------
+    # Price helpers with fallback ladder
+    # ------------------------------------------------------------------
+    async def _gather_prices(self, mentions: Dict[str, int]) -> Dict[str, Any]:
+        # reset daily quota window
+        if datetime.now(timezone.utc) >= self._quota_reset_at:
+            self._quota.clear()
+            self._exhausted.clear()
+            self._quota_reset_at = datetime.now(timezone.utc) + QUOTA_RESET_INTERVAL
+
+        async def fetch_one(sym: str) -> Dict[str, Any]:
+            for provider in PRICE_PROVIDERS:
+                if provider in self._exhausted:
+                    continue
+                try:
+                    fetcher = getattr(self, f"_price_{provider}")
+                    data = await fetcher(sym)
+                    self._bump_quota(provider)
+                    return data
+                except APILimitError:
+                    self._exhausted.add(provider)
+                    continue
+                except Exception as err:
+                    _LOGGER.debug("%s via %s failed: %s", sym, provider, err)
+            return {"current_price": None, "price_change_pct": 0.0, "provider": "exhausted"}
+
+        symbols = list(mentions)[:10]
+        price_results = await asyncio.gather(*[fetch_one(s) for s in symbols])
+
+        price_map = dict(zip(symbols, price_results))
+        top_sorted = sorted(symbols, key=lambda s: mentions[s], reverse=True)[:3]
+
+        now = datetime.now(timezone.utc)
+        top_entities = []
+        for rank, sym in enumerate(top_sorted, start=1):
+            pdata = price_map[sym]
+            if sym not in self._first_seen:
+                self._first_seen[sym] = now
+                self._first_price[sym] = pdata["current_price"] or 0.0
+            days_active = (now - self._first_seen[sym]).days
+            since_start = (
+                ((pdata["current_price"] / self._first_price[sym]) - 1) * 100
+                if self._first_price[sym]
+                else 0.0
+            )
+            top_entities.append(
+                {
+                    "symbol": sym,
+                    "company": STOCK_NAME_MAPPING.get(sym, sym),
+                    "rank": rank,
+                    "mentions": mentions[sym],
+                    "days_active": days_active,
+                    "price_since_start": round(since_start, 2),
+                    **pdata,
+                }
+            )
+
+        stage = self._determine_stage(top_entities[0] if top_entities else None)
+
+        return {
+            "top_entities": top_entities,
+            "stage": stage,
+            "price_map": price_map,
+        }
+
+    # individual provider fetchers ------------------------------------------------
+    async def _price_yfinance(self, sym: str) -> Dict[str, Any]:
+        def _sync():
+            tk = yf.Ticker(sym)
+            hist = tk.history(period="5d")
+            if hist.empty:
+                raise RuntimeError("No Yahoo data")
+            cur = hist["Close"].iloc[-1]
+            prev = hist["Close"].iloc[-2] if len(hist) > 1 else cur
+            pct = round(((cur / prev) - 1) * 100, 2)
+            return {
+                "current_price": round(float(cur), 2),
+                "price_change_pct": pct,
+                "volume": int(hist["Volume"].iloc[-1]),
+                "provider": "yfinance",
+            }
+
+        return await self.hass.async_add_executor_job(_sync)
+
+    async def _price_alpha_vantage(self, sym: str) -> Dict[str, Any]:
+        if not self._alpha_key:
+            raise RuntimeError("No AV key")
+        from alpha_vantage.timeseries import TimeSeries
+
+        ts = TimeSeries(self._alpha_key, output_format="json")
+        data, _ = await self.hass.async_add_executor_job(ts.get_daily, sym, "compact")
+        rows = list(data.values())[:2]
+        if not rows:
+            raise RuntimeError("Empty AV data")
+        cur, prev = float(rows[0]["4. close"]), float(rows[1]["4. close"])
+        pct = round(((cur / prev) - 1) * 100, 2)
+        return {
+            "current_price": round(cur, 2),
+            "price_change_pct": pct,
+            "volume": int(rows[0]["5. volume"]),
+            "provider": "alpha_vantage",
+        }
+
+    async def _price_polygon(self, sym: str) -> Dict[str, Any]:
+        if not self._polygon_key:
+            raise RuntimeError("No Polygon key")
+        import aiohttp, datetime as dt
+
+        start = (datetime.utcnow() - timedelta(days=5)).date()
+        end = datetime.utcnow().date()
+        url = (
+            f"https://api.polygon.io/v2/aggs/ticker/{sym}/range/1/day/{start}/{end}?limit=2&apiKey={self._polygon_key}"
+        )
+        async with aiohttp.ClientSession() as sess, sess.get(url, timeout=10) as resp:
+            if resp.status == 429:
+                raise APILimitError
+            js = await resp.json()
+        bars = js.get("results", [])
+        if len(bars) < 2:
+            raise RuntimeError("Insufficient bars")
+        cur, prev = bars[-1]["c"], bars[-2]["c"]
+        pct = round(((cur / prev) - 1) * 100, 2)
+        return {
+            "current_price": round(cur, 2),
+            "price_change_pct": pct,
+            "volume": bars[-1]["v"],
+            "provider": "polygon",
+        }
+
+    # ------------------------------------------------------------------
+    def _bump_quota(self, provider: str):
+        limit = API_LIMITS.get(provider, 0)
+        if limit:
+            self._quota[provider] += 1
+            if self._quota[provider] >= limit:
+                self._exhausted.add(provider)
+
+    # ------------------------------------------------------------------
+    def _determine_stage(self, top: Dict[str, Any] | None) -> str:
+        if not top or top["current_price"] is None:
+            return MEME_STOCK_STAGES["start"]
+        days = top["days_active"]
+        price_pct = top["price_change_pct"]
+        if days < 3 and price_pct < 2:
+            return MEME_STOCK_STAGES["start"]
+        if price_pct > 5 and days < 14:
+            return MEME_STOCK_STAGES["stock_rising"]
+        if price_pct > 10:
+            return MEME_STOCK_STAGES["within_estimated_peak"]
+        if price_pct < -5:
+            return MEME_STOCK_STAGES["dropping"]
+        return MEME_STOCK_STAGES["rising_interest"]
+
+    # ------------------------------------------------------------------
+    async def _async_refresh_dynamic_subreddit(self, _):
+        """Weekly discovery of high-traffic trading sub."""
+        try:
+            top_week = await self.hass.async_add_executor_job(
+                lambda: list(self._reddit.subreddit("all").top(limit=200, time_filter="week"))
+            )
+            tally = defaultdict(int)
+            for post in top_week:
+                tally[post.subreddit.display_name.lower()] += 1
+            for name, _ in sorted(tally.items(), key=lambda x: x[1], reverse=True):
+                if name not in self._subreddits:
+                    self._dynamic_sr = name
+                    _LOGGER.info("Dynamic subreddit switched to %s", name)
+                    return
+        except Exception as err:
+            _LOGGER.debug("Dynamic subreddit discovery failed: %s", err)

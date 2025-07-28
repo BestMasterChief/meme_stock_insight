@@ -1,107 +1,158 @@
-"""Constants for the Meme Stock Insight integration - Enhanced Version."""
+"""Constants for Meme Stock Insight - v0.6.0"""
+from datetime import timedelta
 
 DOMAIN = "meme_stock_insight"
-VERSION = "0.0.4"
-
-# Configuration constants
-CONF_CLIENT_ID = "client_id"
-CONF_CLIENT_SECRET = "client_secret"
-CONF_USERNAME = "username"
-CONF_PASSWORD = "password"
-CONF_SUBREDDITS = "subreddits"
-CONF_UPDATE_INTERVAL = "update_interval"
-
-# Default values
-DEFAULT_UPDATE_INTERVAL = 300  # 5 minutes
-DEFAULT_SUBREDDITS = "wallstreetbets,stocks,investing"
-
-# Attribution
+VERSION = "0.6.0"
 ATTRIBUTION = "Data provided by Reddit API and Yahoo Finance"
 
-# Popular meme stock symbols to track
-MEME_STOCK_SYMBOLS = {
-    "GME", "AMC", "BBBY", "NOK", "BB", "SNDL", "PLTR", "WISH", "CLOV", "SOFI",
-    "TSLA", "NVDA", "AMD", "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NFLX", "DIS",
-    "SPY", "QQQ", "IWM", "VTI", "ARKK", "TQQQ", "SQQQ", "UVXY", "VIX", "GLD",
-    "BTC-USD", "ETH-USD", "DOGE-USD", "SHIB-USD", "ADA-USD", "DOT-USD", "LINK-USD", 
-    "UNI-USD", "AVAX-USD", "MATIC-USD",
-    "BABA", "NIO", "XPEV", "LI", "RIVN", "LCID", "F", "GM", "HOOD", "COIN",
-    "ZM", "PTON", "BYND", "SPCE", "NKLA", "TLRY", "ACB", "CGC", "HEXO", "SAVA",
-    "CRSR", "RKT", "UWMC", "PSFE", "UPST", "AFRM", "SQ", "PYPL", "V", "MA"
-}
+# Update intervals
+DEFAULT_UPDATE_INTERVAL = timedelta(minutes=5)
+DYNAMIC_SUBREDDIT_REFRESH = timedelta(days=7)
 
-# Company name mappings for major meme stocks (fallback for when API fails)
+# Reddit configuration
+DEFAULT_SUBREDDITS = ["wallstreetbets", "stocks", "investing"]
+MAX_POSTS_PER_SUBREDDIT = 30
+MAX_COMMENTS_PER_POST = 10
+
+# Price provider configuration
+PRICE_PROVIDERS = ["yfinance", "alpha_vantage", "polygon"]
+API_LIMITS = {
+    "yfinance": 0,          # Unlimited for free tier
+    "alpha_vantage": 500,   # Free tier daily limit
+    "polygon": 5000,        # Free tier daily limit
+}
+QUOTA_RESET_INTERVAL = timedelta(days=1)
+
+# Sensor configurations
+SENSOR_MENTIONS = "stock_mentions"
+SENSOR_SENTIMENT = "market_sentiment" 
+SENSOR_TRENDING = "trending_stocks"
+SENSOR_MEME_1 = "meme_stock_1"
+SENSOR_MEME_2 = "meme_stock_2"
+SENSOR_MEME_3 = "meme_stock_3"
+SENSOR_STAGE = "meme_stock_stage"
+SENSOR_DAYS_ACTIVE = "days_active"
+SENSOR_PRICE_SINCE_START = "price_since_start"
+SENSOR_DYNAMIC_SUBREDDIT = "dynamic_subreddit"
+
+# Tracked stock symbols
+MEME_STOCK_SYMBOLS = [
+    "GME", "AMC", "TSLA", "META", "NVDA", "AMD", "AAPL", "MSFT", "GOOGL", "AMZN",
+    "PLTR", "HOOD", "COIN", "SOFI", "CLOV", "WISH", "SNDL", "NOK", "BB", "EXPR",
+    "KOSS", "NAKD", "SIRI", "DOGE-USD", "BTC-USD", "ETH-USD", "SHIB-USD", "ADA-USD",
+    "SPY", "QQQ", "IWM", "VIX", "DIA", "TLT", "GLD", "SLV", "OIL", "GAS",
+    "BABA", "NIO", "XPEV", "LI", "RIVN", "LCID", "F", "GM", "NKLA", "RIDE",
+    "SPCE", "ARKK", "ARKF", "ARKG", "MVIS", "SENS", "BNGO", "OCGN", "PROG", "BBIG"
+]
+
+# Company name mapping
 STOCK_NAME_MAPPING = {
     "GME": "GameStop Corp",
     "AMC": "AMC Entertainment Holdings Inc",
     "TSLA": "Tesla Inc",
     "META": "Meta Platforms Inc",
+    "NVDA": "NVIDIA Corporation",
+    "AMD": "Advanced Micro Devices Inc",
     "AAPL": "Apple Inc",
     "MSFT": "Microsoft Corporation",
     "GOOGL": "Alphabet Inc",
     "AMZN": "Amazon.com Inc",
-    "NVDA": "NVIDIA Corporation",
-    "AMD": "Advanced Micro Devices Inc",
     "PLTR": "Palantir Technologies Inc",
     "HOOD": "Robinhood Markets Inc",
     "COIN": "Coinbase Global Inc",
     "SOFI": "SoFi Technologies Inc",
-    "BB": "BlackBerry Limited",
+    "CLOV": "Clover Health Investments Corp",
+    "WISH": "ContextLogic Inc",
+    "SNDL": "Sundial Growers Inc",
     "NOK": "Nokia Corporation",
-    "NFLX": "Netflix Inc",
-    "DIS": "The Walt Disney Company",
+    "BB": "BlackBerry Limited",
+    "EXPR": "Express Inc",
+    "KOSS": "Koss Corporation",
+    "NAKD": "Naked Brand Group Limited",
+    "SIRI": "Sirius XM Holdings Inc",
+    "DOGE-USD": "Dogecoin",
+    "BTC-USD": "Bitcoin",
+    "ETH-USD": "Ethereum",
+    "SHIB-USD": "Shiba Inu",
+    "ADA-USD": "Cardano",
+    "SPY": "SPDR S&P 500 ETF Trust",
+    "QQQ": "Invesco QQQ Trust",
+    "IWM": "iShares Russell 2000 ETF",
+    "VIX": "CBOE Volatility Index",
+    "DIA": "SPDR Dow Jones Industrial Average ETF Trust",
+    "TLT": "iShares 20+ Year Treasury Bond ETF",
+    "GLD": "SPDR Gold Shares",
+    "SLV": "iShares Silver Trust",
+    "OIL": "United States Oil Fund",
+    "GAS": "United States Gasoline Fund",
+    "BABA": "Alibaba Group Holding Limited",
+    "NIO": "NIO Inc",
+    "XPEV": "XPeng Inc",
+    "LI": "Li Auto Inc",
     "RIVN": "Rivian Automotive Inc",
     "LCID": "Lucid Group Inc",
     "F": "Ford Motor Company",
-    "GM": "General Motors Company"
+    "GM": "General Motors Company",
+    "NKLA": "Nikola Corporation",
+    "RIDE": "Lordstown Motors Corp",
+    "SPCE": "Virgin Galactic Holdings Inc",
+    "ARKK": "ARK Innovation ETF",
+    "ARKF": "ARK Fintech Innovation ETF",
+    "ARKG": "ARK Genomics Revolution ETF",
+    "MVIS": "MicroVision Inc",
+    "SENS": "Senseonics Holdings Inc",
+    "BNGO": "Bionano Genomics Inc",
+    "OCGN": "Ocugen Inc",
+    "PROG": "Progenity Inc",
+    "BBIG": "Vinco Ventures Inc"
 }
 
-# Keywords that might indicate false positives for certain symbols
+# Sentiment analysis keywords
+SENTIMENT_KEYWORDS_POSITIVE = [
+    "buy", "bullish", "moon", "rocket", "diamond", "hands", "hold", "hodl",
+    "squeeze", "gain", "profit", "up", "rise", "call", "calls", "long",
+    "pump", "rally", "breakout", "momentum", "strong", "support", "bull"
+]
+
+SENTIMENT_KEYWORDS_NEGATIVE = [
+    "sell", "bearish", "crash", "drop", "fall", "puts", "put", "short",
+    "dump", "loss", "down", "bear", "red", "baghold", "panic", "fear",
+    "resistance", "weak", "dip", "correction", "bubble", "overvalued"
+]
+
+# False positive filters
 FALSE_POSITIVE_KEYWORDS = {
-    "AM": ["morning", "am i", "i am", "am not", "am going", "am here"],
-    "A": ["a stock", "a share", "a good", "a bad", "a lot", "a few", "a day"],
-    "IT": ["it is", "it was", "it will", "it would", "it could", "it should"],
-    "GO": ["go to", "go up", "go down", "go long", "go short", "let's go"],
-    "AI": ["ai technology", "artificial intelligence"],
-    "TV": ["television", "tv show", "tv series"],
-    "DD": ["due diligence", "deep dive"],
-    "CEO": ["chief executive"],
-    "ATH": ["all time high"],
-    "ATL": ["all time low"],
-    "ER": ["earnings report", "emergency room"],
-    "PE": ["price to earnings", "physical education"],
-    "EV": ["electric vehicle", "enterprise value"],
-    "IPO": ["initial public offering"],
-    "NYSE": ["new york stock exchange"],
-    "FDA": ["food and drug administration"],
-    "SEC": ["securities and exchange commission"],
-    "FED": ["federal reserve"],
-    "GDP": ["gross domestic product"],
-    "CPI": ["consumer price index"],
-    "ETF": ["exchange traded fund"],
-    "IPO": ["initial public offering"],
-    "RSI": ["relative strength index"],
-    "MACD": ["moving average convergence divergence"]
-}
-
-# Positive sentiment keywords
-SENTIMENT_KEYWORDS_POSITIVE = {
-    "moon", "rocket", "bullish", "buy", "calls", "green", "gains", "profit",
-    "diamond hands", "hold", "hodl", "strong", "support", "breakout", "rally",
-    "squeeze", "pump", "bull", "uptrend", "momentum", "catalyst", "golden",
-    "explosion", "surge", "spike", "soar", "rise", "climb", "jump", "boost",
-    "positive", "optimistic", "confident", "excited", "potential", "opportunity",
-    "winner", "success", "victory", "target", "breakthrough", "promising"
-}
-
-# Negative sentiment keywords 
-SENTIMENT_KEYWORDS_NEGATIVE = {
-    "crash", "dump", "bearish", "sell", "puts", "red", "loss", "bear",
-    "downtrend", "decline", "drop", "fall", "plunge", "tank", "collapse",
-    "weak", "resistance", "bagholding", "rip", "dead", "over", "done",
-    "disaster", "terrible", "awful", "worried", "concerned", "doubt",
-    "negative", "pessimistic", "fear", "panic", "scary", "risky", "danger",
-    "warning", "caution", "avoid", "stay away", "trap", "scam", "fraud"
+    "AM": ["morning", "am", "a.m.", "time"],
+    "PM": ["evening", "pm", "p.m.", "time"],
+    "IT": ["information", "technology", "tech"],
+    "AI": ["artificial", "intelligence"],
+    "DD": ["due", "diligence"],
+    "CEO": ["chief", "executive", "officer"],
+    "CFO": ["chief", "financial", "officer"],
+    "IPO": ["initial", "public", "offering"],
+    "SEC": ["securities", "exchange", "commission"],
+    "FDA": ["food", "drug", "administration"],
+    "US": ["united", "states", "america"],
+    "UK": ["united", "kingdom", "britain"],
+    "EU": ["european", "union"],
+    "NY": ["new", "york"],
+    "CA": ["california"],
+    "LA": ["los", "angeles"],
+    "TV": ["television"],
+    "PC": ["personal", "computer"],
+    "PR": ["public", "relations"],
+    "HR": ["human", "resources"],
+    "IR": ["investor", "relations"],
+    "RE": ["real", "estate"],
+    "PE": ["private", "equity"],
+    "VC": ["venture", "capital"],
+    "M&A": ["merger", "acquisition"],
+    "ROI": ["return", "investment"],
+    "P/E": ["price", "earnings"],
+    "EPS": ["earnings", "per", "share"],
+    "EBITDA": ["earnings", "before", "interest"],
+    "CAPEX": ["capital", "expenditure"],
+    "OPEX": ["operating", "expenditure"]
 }
 
 # Meme stock lifecycle stages
@@ -109,86 +160,29 @@ MEME_STOCK_STAGES = {
     "start": "Start",
     "rising_interest": "Rising Interest", 
     "stock_rising": "Stock Rising",
-    "estimated_peak": "Within Estimated Peak",
+    "within_estimated_peak": "Within Estimated Peak",
     "do_not_buy": "DO NOT BUY",
     "dropping": "Dropping"
 }
 
-# Stage analysis thresholds
+# Stage determination thresholds
 STAGE_THRESHOLDS = {
-    "volume_spike_threshold": 1.5,  # 50% above average volume
-    "price_change_1d_rising": 0.02,  # 2% daily change for rising
-    "price_change_1d_peak": 0.05,   # 5% daily change for peak detection
-    "price_change_7d_declining": -0.10,  # -10% weekly change for declining
-    "sentiment_positive_threshold": 0.1,  # Positive sentiment threshold
-    "sentiment_negative_threshold": -0.1,  # Negative sentiment threshold
-    "mentions_spike_threshold": 2.0,  # 2x increase in mentions
-    "rsi_overbought": 70,  # RSI overbought level
-    "rsi_oversold": 30,   # RSI oversold level
+    "mentions_low": 5,
+    "mentions_medium": 15,
+    "mentions_high": 30,
+    "price_change_low": 2.0,
+    "price_change_medium": 5.0,
+    "price_change_high": 10.0,
+    "sentiment_negative": -0.3,
+    "sentiment_neutral": 0.1,
+    "sentiment_positive": 0.3,
+    "days_early": 7,
+    "days_mid": 21,
+    "volume_spike": 1.5
 }
 
-# Enhanced sensor types
-SENSOR_TYPES = {
-    "mentions": {
-        "name": "Stock Mentions",
-        "icon": "mdi:chart-line",
-        "unit": "mentions",
-        "device_class": None,
-    },
-    "sentiment": {
-        "name": "Market Sentiment", 
-        "icon": "mdi:emoticon-happy-outline",
-        "unit": "score",
-        "device_class": None,
-    },
-    "trending": {
-        "name": "Trending Stocks",
-        "icon": "mdi:trending-up",
-        "unit": "stocks",
-        "device_class": None,
-    },
-    "meme_1": {
-        "name": "Meme Stock #1",
-        "icon": "mdi:trophy",
-        "unit": None,
-        "device_class": None,
-    },
-    "meme_2": {
-        "name": "Meme Stock #2", 
-        "icon": "mdi:medal",
-        "unit": None,
-        "device_class": None,
-    },
-    "meme_3": {
-        "name": "Meme Stock #3",
-        "icon": "mdi:podium-bronze", 
-        "unit": None,
-        "device_class": None,
-    },
-    "stage": {
-        "name": "Meme Stock Stage",
-        "icon": "mdi:chart-timeline-variant",
-        "unit": None,
-        "device_class": None,
-    }
-}
-
-# Stage icons for different phases
-STAGE_ICONS = {
-    "start": "mdi:seedling",
-    "rising_interest": "mdi:trending-up", 
-    "stock_rising": "mdi:rocket-launch",
-    "estimated_peak": "mdi:mountain",
-    "do_not_buy": "mdi:alert-octagon",
-    "dropping": "mdi:trending-down"
-}
-
-# Stage colors for UI representation
-STAGE_COLORS = {
-    "start": "#4CAF50",  # Green
-    "rising_interest": "#2196F3",  # Blue
-    "stock_rising": "#FF9800",  # Orange  
-    "estimated_peak": "#9C27B0",  # Purple
-    "do_not_buy": "#F44336",  # Red
-    "dropping": "#607D8B"  # Blue Grey
-}
+# Error messages
+ERROR_REDDIT_AUTH = "reddit_auth_failed"
+ERROR_API_LIMIT = "max_api_calls_used"
+ERROR_TIMEOUT = "timeout"
+ERROR_INVALID_CONFIG = "invalid_config"
