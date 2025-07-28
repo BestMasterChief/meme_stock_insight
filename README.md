@@ -2,9 +2,6 @@
 
 *Transform your Home Assistant into a meme stock command center. Because why check Reddit manually when your smart home can do it for you?*
 
-![Meme Stock Insight Demo](https://via.placeholder.com/750x400/222/eee?text=Meme+Stock+Insight+Dashboard+Demo)  
-*(Replace with your own screenshot!)*
-
 ---
 
 ## ⚠️ DISCLAIMER
@@ -60,7 +57,7 @@ Meme Stock Insight brings the chaotic energy of r/wallstreetbets directly into y
 
 ## 🎪 The Meme Stock Lifecycle
 
-Our advanced AI (Artificial Intelligence, not Artificial Ignorance) analyzes multiple factors to determine where each stock sits in the classic meme stock journey:
+Our advanced AI (Arithmetic Ignorance, not Artificial Intelligence) analyzes multiple factors to determine where each stock sits in the classic meme stock journey:
 
 - **Volume Spikes**: When trading volume goes brrrr
 - **Reddit Mentions**: Ape activity tracking across subreddits
