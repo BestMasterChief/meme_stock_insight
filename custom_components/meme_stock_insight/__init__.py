@@ -1,41 +1,65 @@
-"""HA entry points – v0.6.0."""
+"""The Meme Stock Insight integration."""
 from __future__ import annotations
-import logging, voluptuous as vol
-from typing import Any
+
+import logging
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.const import CONF_USERNAME, CONF_PASSWORD
-from homeassistant.helpers.typing import ConfigType
+from homeassistant.exceptions import ConfigEntryNotReady
 
-from .const import DOMAIN, PLATFORMS
-from .coordinator import MemeStockCoordinator
+from .const import DOMAIN, DEFAULT_SUBREDDITS, DEFAULT_UPDATE_INTERVAL
+from .coordinator import MemeStockInsightCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-async def async_setup(_hass: HomeAssistant, _config: ConfigType) -> bool:
-    return True  # YAML not supported
+PLATFORMS: list[Platform] = [Platform.SENSOR]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    reddit_conf = {
-        "client_id":     entry.data["client_id"],
-        "client_secret": entry.data["client_secret"],
-        "username":      entry.data[CONF_USERNAME],
-        "password":      entry.data[CONF_PASSWORD],
-        "user_agent":    f"homeassistant:meme_stock_insight:{entry.version} (by /u/{entry.data[CONF_USERNAME]})",
-    }
-    options = entry.options
-    coord = MemeStockCoordinator(hass, reddit_conf, options)
-    await coord.async_config_entry_first_refresh()
+    """Set up Meme Stock Insight from a config entry."""
+    hass.data.setdefault(DOMAIN, {})
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coord
+    # Get configuration with options override
+    config = entry.data.copy()
+    if entry.options:
+        config.update(entry.options)
+
+    coordinator = MemeStockInsightCoordinator(
+        hass,
+        config["client_id"],
+        config["client_secret"],
+        config["username"],
+        config["password"],
+        config.get("subreddits", DEFAULT_SUBREDDITS),
+        config.get("update_interval", DEFAULT_UPDATE_INTERVAL),
+    )
+
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except Exception as exc:
+        _LOGGER.error("Error setting up Meme Stock Insight: %s", exc)
+        raise ConfigEntryNotReady from exc
+
+    hass.data[DOMAIN][entry.entry_id] = coordinator
+
+    # Set up platforms
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Listen for options updates
+    entry.async_on_unload(entry.add_update_listener(async_update_options))
+
     return True
 
 
+async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Update options."""
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    unload = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if unload:
+    """Unload a config entry."""
+    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         hass.data[DOMAIN].pop(entry.entry_id)
-    return unload
+
+    return unload_ok
