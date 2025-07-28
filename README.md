@@ -57,7 +57,7 @@ Meme Stock Insight brings the chaotic energy of r/wallstreetbets directly into y
 
 ## 🎪 The Meme Stock Lifecycle
 
-Our advanced AI (Arathmatic Ignorance, not Artificial Intelligence) analyzes multiple factors to determine where each stock sits in the classic meme stock journey:
+Our advanced AI (Arithmetic Ignorance, not Artificial Intelligence) analyzes multiple factors to determine where each stock sits in the classic meme stock journey:
 
 - **Volume Spikes**: When trading volume goes brrrr
 - **Reddit Mentions**: Ape activity tracking across subreddits
